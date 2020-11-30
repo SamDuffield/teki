@@ -8,7 +8,6 @@ import pickle
 from jax import numpy as np, random, vmap
 import matplotlib.pyplot as plt
 import numpy as onp
-from scipy.stats.kde import gaussian_kde
 
 import mocat
 from mocat import abc
@@ -301,7 +300,7 @@ plt.show()
 # Plot convergence in RMSE
 
 marker_types = ('o', 'X', 'D', '^', 'P', 'p')
-line_types = ('-', '--', ':', '-.', None)
+line_types = ('-', '--', ':', '-.')
 
 # EKI convergence
 num_simulations = onp.zeros((len(simulation_params.n_samps_eki), simulation_params.n_repeats), dtype='object')
