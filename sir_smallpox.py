@@ -95,17 +95,17 @@ random_key = random.PRNGKey(0)
 #                                                               max_temp=simulation_params.eki_max_temp)
 
 # Run EKI
-# utils.run_eki(sir_scenario, save_dir, random_key)
+utils.run_eki(sir_scenario, save_dir, random_key)
 
 # Run RWMH ABC
-# utils.run_abc(sir_scenario, save_dir, random_key)
+utils.run_abc(sir_scenario, save_dir, random_key)
 
 param_names = (r'$\lambda$', r'$\gamma$')
 
 # Plot EKI
-# plot_ranges_eki = [[0., 5.], [0, 0.3]]
-# utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.5,
-#                rmse_temp_round=0)
+plot_ranges_eki = [[0., 5.], [0, 0.3]]
+utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.5,
+               rmse_temp_round=0)
 
 # Plot ABC
 plot_ranges_abc = [[0., 5.], [0, 15.]]
