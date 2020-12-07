@@ -50,14 +50,14 @@ simulation_params.rwmh_stepsize = 1e-1
 class OneDimLG(abc.scenarios.LinearGaussian):
     def distance_function(self,
                           summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summarised_data).sum())
+        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
 
 
 lg_scenario = OneDimLG(prior_mean=np.ones(1) * simulation_params.prior_mean,
                        prior_covariance=np.eye(1) * simulation_params.prior_sd ** 2,
                        likelihood_matrix=np.eye(1) * simulation_params.likelihood_mat,
                        likelihood_covariance=np.eye(1) * simulation_params.likelihood_sd)
-lg_scenario.summarised_data = simulation_params.data
+lg_scenario.summary_statistic = simulation_params.data
 
 random_key = random.PRNGKey(0)
 random_key, eki_sim_key = random.split(random_key)

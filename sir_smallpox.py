@@ -50,7 +50,7 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
     initial_si = np.array([119, 1])
     times = np.array([0., 13., 26., 39., 52., 65., 78., np.inf])
     data = np.array([2, 6, 3, 7, 8, 4, 0, 76])
-    summarised_data = data
+    summary_statistic = data
 
     prior_rates = np.ones(2) * 0.1
 
@@ -76,7 +76,7 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
 
     def distance_function(self,
                           summarised_simulated_data: np.ndarray) -> float:
-        diff_data = summarised_simulated_data - self.summarised_data
+        diff_data = summarised_simulated_data - self.summary_statistic
         return np.sqrt(np.square(diff_data[:-1]) + (diff_data[-1] / 50) ** 2)
 
 
@@ -95,20 +95,20 @@ random_key = random.PRNGKey(0)
 #                                                               max_temp=simulation_params.eki_max_temp)
 
 # Run EKI
-utils.run_eki(sir_scenario, save_dir, random_key)
+# utils.run_eki(sir_scenario, save_dir, random_key)
 
 # Run RWMH ABC
-utils.run_abc(sir_scenario, save_dir, random_key)
+# utils.run_abc(sir_scenario, save_dir, random_key)
 
 param_names = (r'$\lambda$', r'$\gamma$')
 
 # Plot EKI
 plot_ranges_eki = [[0., 5.], [0, 0.3]]
-utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.5,
-               rmse_temp_round=0)
+# utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.5,
+#                rmse_temp_round=0)
 
 # Plot ABC
-plot_ranges_abc = [[0., 5.], [0, 15.]]
+plot_ranges_abc = [[0., 5.], [0, 0.3]]
 utils.plot_abc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names, y_range_mult2=1.0)
 
 

@@ -61,7 +61,7 @@ simulation_params.save(save_dir + '/sim_params', overwrite=True)
 #
 #     def __setattr__(self, key, value):
 #         super().__setattr__(key, value)
-#         if key == 'full_data' and self.max_ind is None:
+#         if key == 'data' and self.max_ind is None:
 #             self.max_ind = len(value)
 #
 #     def summarise_data(self,
@@ -73,7 +73,7 @@ simulation_params.save(save_dir + '/sim_params', overwrite=True)
 #
 #     def distance_function(self,
 #                           summarised_simulated_data: np.ndarray) -> float:
-#         return np.sqrt(np.square(summarised_simulated_data - self.summarised_data).sum())
+#         return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
 
 
 # class GKThinOrder(abc.scenarios.GKTransformedUniformPrior):
@@ -90,7 +90,7 @@ simulation_params.save(save_dir + '/sim_params', overwrite=True)
 #
 #     def distance_function(self,
 #                           summarised_simulated_data: np.ndarray) -> float:
-#         return np.sqrt(np.square(summarised_simulated_data - self.summarised_data).sum())
+#         return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
 
 
 class GKThinOrder(abc.scenarios.GKTransformedUniformPrior):
@@ -105,11 +105,11 @@ class GKThinOrder(abc.scenarios.GKTransformedUniformPrior):
 
     def distance_function(self,
                           summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summarised_data).sum())
+        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
 
     # def distance_function(self,
     #                       summarised_simulated_data: np.ndarray) -> float:
-    #     return np.abs(summarised_simulated_data - self.summarised_data).sum()
+    #     return np.abs(summarised_simulated_data - self.summary_statistic).sum()
 
 
 gk_scenario = GKThinOrder()
@@ -124,12 +124,12 @@ repeat_sim_data_keys = random.split(subkey, simulation_params.n_repeats)
 
 def generate_data(rkey):
     sim_data_keys = random.split(rkey, simulation_params.n_data)
-    full_data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_params, sim_data_keys)
-    return full_data
+    data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_params, sim_data_keys)
+    return data
 
 
-each_full_data = vmap(generate_data)(repeat_sim_data_keys)
-each_summarised_data = vmap(gk_scenario.summarise_data)(each_full_data)
+each_data = vmap(generate_data)(repeat_sim_data_keys)
+each_summary_statistic = vmap(gk_scenario.summarise_data)(each_data)
 
 ########################################################################################################################
 # Run EKI
@@ -137,15 +137,15 @@ each_summarised_data = vmap(gk_scenario.summarise_data)(each_full_data)
 eki_samps_all = onp.zeros((simulation_params.n_repeats,
                            len(simulation_params.n_samps_eki)), dtype='object')
 for i in range(simulation_params.n_repeats):
-    gk_scenario.full_data = each_full_data[i]
-    gk_scenario.summarised_data = each_summarised_data[i]
+    gk_scenario.data = each_data[i]
+    gk_scenario.summary_statistic = each_summary_statistic[i]
     for j, n_eki_single in enumerate(simulation_params.n_samps_eki):
         print(f'Iter={i} - EKI - N={n_eki_single}')
         random_key, _ = random.split(random_key)
         eki_samps = mocat.run_tempered_ensemble_kalman_inversion(gk_scenario,
                                                                  n_eki_single,
                                                                  random_key,
-                                                                 data=each_summarised_data[i],
+                                                                 data=each_summary_statistic[i],
                                                                  max_temp=simulation_params.eki_max_temp)
         eki_samps.repeat_ind = i
         print(f'time = {eki_samps.time}')
@@ -155,12 +155,12 @@ with open(save_dir + '/eki_samps', 'wb') as file:
     pickle.dump(eki_samps_all, file)
 
 # run single for sampling
-gk_scenario.full_data = each_full_data[0]
-gk_scenario.summarised_data = each_summarised_data[0]
+gk_scenario.data = each_data[0]
+gk_scenario.summary_statistic = each_summary_statistic[0]
 eki_temp_1 = mocat.run_tempered_ensemble_kalman_inversion(gk_scenario,
                                                           np.max(simulation_params.n_samps_eki),
                                                           random_key,
-                                                          data=each_summarised_data[0],
+                                                          data=each_summary_statistic[0],
                                                           max_temp=1.)
 
 ########################################################################################################################
@@ -172,8 +172,8 @@ rwmh_abc_samps_all = onp.zeros((simulation_params.n_repeats,
 pre_run_sampler = abc.VanillaABC()
 abc_sampler = abc.RandomWalkABC()
 for i in range(simulation_params.n_repeats):
-    gk_scenario.full_data = each_full_data[i]
-    gk_scenario.summarised_data = each_summarised_data[i]
+    gk_scenario.data = each_data[i]
+    gk_scenario.summary_statistic = each_summary_statistic[i]
     for j, abc_threshold_single in enumerate(simulation_params.abc_thresholds):
         gk_scenario.threshold = abc_threshold_single
         for k, abc_stepsize in enumerate(simulation_params.rwmh_stepsizes):

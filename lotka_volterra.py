@@ -49,7 +49,7 @@ class TLotkaVolterraDist(abc.scenarios.TransformedLotkaVolterra):
     initial_prey_pred = np.array([50, 100])
     times = np.arange(11, dtype='float32')
     data = np.log(np.array([88, 165, 274, 268, 114, 46, 32, 36, 53, 92]))
-    summarised_data = data
+    summary_statistic = data
 
     prior_rates = np.ones(3)
 
