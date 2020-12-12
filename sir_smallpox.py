@@ -21,7 +21,7 @@ if not os.path.exists(save_dir):
 simulation_params = mocat.CDict()
 
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 20
+simulation_params.n_repeats = 5
 
 # EKI
 # Number of samples to generate
@@ -41,6 +41,20 @@ simulation_params.abc_thresholds = np.array([5, 10, 15])
 
 # RWMH stepsizes
 simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
+
+# ABC SMC ##############################################################################################################
+# Number of samples to generate
+simulation_params.n_samps_abc_smc = np.array([200, 1000, 5000])
+
+# Number of intermediate MCMC steps to take
+simulation_params.n_mcmc_steps_abc_smc = 10
+
+# Maximum iterations
+simulation_params.max_iter_abc_smc = 100
+
+# Retain threshold parameter
+simulation_params.threshold_quantile_retain_abc_smc = 0.75
+
 ########################################################################################################################
 
 simulation_params.save(save_dir + '/sim_params', overwrite=True)
@@ -54,9 +68,9 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
 
     prior_rates = np.ones(2) * 0.1
 
-    def simulate(self,
-                 x: np.ndarray,
-                 random_key: np.ndarray) -> np.ndarray:
+    def simulate_data(self,
+                      x: np.ndarray,
+                      random_key: np.ndarray) -> np.ndarray:
         sim_times, sim_si = self.likelihood_sample(x, random_key)
         max_time = np.max(sim_times)
         sim_times = np.where(sim_times == 0, np.inf, sim_times)
@@ -98,7 +112,10 @@ random_key = random.PRNGKey(0)
 # utils.run_eki(sir_scenario, save_dir, random_key)
 
 # Run RWMH ABC
-# utils.run_abc(sir_scenario, save_dir, random_key)
+# utils.run_abc_mcmc(sir_scenario, save_dir, random_key)
+
+# Run AMC SMC
+utils.run_abc_smc(sir_scenario, save_dir, random_key)
 
 param_names = (r'$\lambda$', r'$\gamma$')
 
@@ -109,6 +126,4 @@ plot_ranges_eki = [[0., 5.], [0, 0.3]]
 
 # Plot ABC
 plot_ranges_abc = [[0., 5.], [0, 0.3]]
-utils.plot_abc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names, y_range_mult2=1.0)
-
-
+# utils.plot_abc_mcmc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names, y_range_mult2=1.0)

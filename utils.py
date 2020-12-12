@@ -73,7 +73,7 @@ def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=
     eki_temp_1.save(save_dir + '/eki_posterior', overwrite=True)
 
 
-def run_abc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
+def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
     if simulation_params is None:
         simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
 
@@ -84,7 +84,7 @@ def run_abc(scenario, save_dir, random_key, repeat_summarised_data=None, simulat
     abc_sampler = abc.RandomWalkABC()
     for i in range(simulation_params.n_repeats):
         if repeat_summarised_data is not None:
-            scenario.summarised_data = repeat_summarised_data[i]
+            scenario.summary_statistic = repeat_summarised_data[i]
         for j, abc_threshold_single in enumerate(simulation_params.abc_thresholds):
             scenario.threshold = abc_threshold_single
             for k, abc_stepsize in enumerate(simulation_params.rwmh_stepsizes):
@@ -112,6 +112,32 @@ def run_abc(scenario, save_dir, random_key, repeat_summarised_data=None, simulat
                 rwmh_abc_samps_all[i][j][k] = abc_samps.deepcopy()
     with open(save_dir + '/abc_rwmh_samps', 'wb') as file:
         pickle.dump(rwmh_abc_samps_all, file)
+
+
+def run_abc_smc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
+    if simulation_params is None:
+        simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+
+    abc_smc_samps_all = onp.zeros((simulation_params.n_repeats,
+                                    len(simulation_params.n_samps_abc_smc)), dtype='object')
+    for i in range(simulation_params.n_repeats):
+        if repeat_summarised_data is not None:
+            scenario.summary_statistic = repeat_summarised_data[i]
+        for j, n_samps_single in enumerate(simulation_params.n_samps_abc_smc):
+            print(f'Iter={i} - ABC SMC - N={n_samps_single}')
+            random_key, _ = random.split(random_key)
+
+            abc_samps = mocat.abc.run_abc_smc_sampler(scenario, n_samps_single, random_key,
+                                                      mcmc_steps=simulation_params.n_mcmc_steps_abc_smc,
+                                                      max_iter=simulation_params.max_iter_abc_smc,
+                                                      threshold_quantile_retain=simulation_params.threshold_quantile_retain_abc_smc)
+            abc_samps.repeat_ind = i
+            print(f'time={abc_samps.time}')
+            print(f'{len(abc_samps.threshold_schedule)} schedules, terminating at {abc_samps.threshold_schedule[-1]}')
+
+            abc_smc_samps_all[i][j] = abc_samps.deepcopy()
+    with open(save_dir + '/abc_smc_samps', 'wb') as file:
+        pickle.dump(abc_smc_samps_all, file)
 
 
 def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_range_mult2=None, rmse_temp_round=1):
@@ -224,7 +250,7 @@ def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
         fig.savefig(save_dir + '/EKI_rmseconv', dpi=300)
 
 
-def plot_abc(scenario, save_dir, ranges, true_params=None, param_names=None, y_range_mult2=None):
+def plot_abc_mcmc(scenario, save_dir, ranges, true_params=None, param_names=None):
     with open(save_dir + '/abc_rwmh_samps', 'rb') as file:
         rwmh_abc_samps_all = pickle.load(file)
 
@@ -309,4 +335,74 @@ def plot_abc(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
             plt.legend(frameon=False)
             fig.tight_layout()
             fig.savefig(save_dir + f'/abc_rmseconv_stepsize{ss}'.replace('.', '_'), dpi=300)
+
+
+# def plot_abc_smc(scenario, save_dir, ranges, true_params=None, param_names=None, y_range_mult2=None):
+#     with open(save_dir + '/abc_smc_samps', 'rb') as file:
+#         abc_smc_samps_all = pickle.load(file)
+#
+#     simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+#
+#     subplots_config = get_subplot_config(scenario.dim)
+#
+#     # Plot ABC densities
+#     num_thresh_plot = np.minimum(4, len(abc_smc_samps_all[0, -1].threshold_schedule))
+#     for thresh_ind in range(num_thresh_plot):
+#
+#         ss = round(float(simulation_params.rwmh_stepsizes[ss_ind]), 4)
+#         fig_abci, axes_abci = plt.subplots(*subplots_config)
+#         rav_axes_abci = np.ravel(axes_abci)
+#         for i in range(min(scenario.dim, 4)):
+#             rav_axes_abci[i].set_yticks([])
+#             rav_axes_abci[i].set_xlabel(param_names[i])
+#             for thresh_ind in range(num_thresh_plot):
+#                 samps = scenario.constrain(rwmh_abc_samps_all[0, thresh_ind, ss_ind].value[:, i]) \
+#                     if hasattr(scenario, 'constrain') else rwmh_abc_samps_all[0, thresh_ind, ss_ind].value[:, i]
+#                 plot_kde(rav_axes_abci[i], samps, ranges[i], color='green',
+#                          alpha=0.3 + 0.7 * thresh_ind / len(simulation_params.rwmh_stepsizes),
+#                          label=str(simulation_params.abc_thresholds[thresh_ind]))
+#                 if true_params is not None:
+#                     rav_axes_abci[i].axvline(true_params[i], c='red')
+#             dens_clean_ax(rav_axes_abci[i])
+#         fig_abci.suptitle(f'Stepsize: {ss}')
+#         plt.legend(title='Threshold', frameon=False)
+#         fig_abci.tight_layout()
+#         fig_abci.savefig(save_dir + f'/abc_densities_stepsize{ss}'.replace('.', '_'), dpi=300)
+#
+#     if true_params is not None:
+#         # RWMH ABC convergence
+#         n_samps_rwmh_range = simulation_params.n_samps_rwmh / 10 ** np.arange(3)
+#
+#         rmses = onp.zeros((len(simulation_params.rwmh_stepsizes),
+#                            len(n_samps_rwmh_range),
+#                            simulation_params.n_repeats,
+#                            len(simulation_params.abc_thresholds)))
+#
+#         for stepsize_int in range(len(simulation_params.rwmh_stepsizes)):
+#             ss = round(float(simulation_params.rwmh_stepsizes[stepsize_int]), 4)
+#             fig, ax = plt.subplots()
+#             for n_samp_ind in range(len(n_samps_rwmh_range)):
+#                 for thresh_ind in range(len(simulation_params.abc_thresholds)):
+#                     for repeat_ind in range(simulation_params.n_repeats):
+#                         samps = rwmh_abc_samps_all[repeat_ind,
+#                                                    thresh_ind,
+#                                                    stepsize_int].value[:int(n_samps_rwmh_range[n_samp_ind])]
+#                         samps = scenario.constrain(samps) \
+#                             if hasattr(scenario, 'constrain') else samps
+#
+#                         rmses[stepsize_int, n_samp_ind, repeat_ind, thresh_ind] \
+#                             = np.sqrt(np.square(samps - true_params).mean())
+#
+#                 ax.plot(simulation_params.abc_thresholds, rmses[stepsize_int, n_samp_ind].mean(0),
+#                         color='green', linestyle=line_types[n_samp_ind],
+#                         linewidth=3, alpha=0.6,
+#                         label=str(int(n_samps_rwmh_range[n_samp_ind])))
+#             ax.spines['top'].set_visible(False)
+#             ax.spines['right'].set_visible(False)
+#             ax.set_xlabel('Threshold')
+#             ax.set_ylabel('RMSE')
+#             fig.suptitle(f'Stepsize: {ss}')
+#             plt.legend(frameon=False)
+#             fig.tight_layout()
+#             fig.savefig(save_dir + f'/abc_rmseconv_stepsize{ss}'.replace('.', '_'), dpi=300)
 
