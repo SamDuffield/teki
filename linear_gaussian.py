@@ -20,7 +20,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 simulation_params.prior_mean = 0.
 simulation_params.prior_sd = np.sqrt(5)
@@ -95,7 +95,7 @@ for j in range(len(simulation_params.abc_thresholds)):
                                   abc_sampler,
                                   simulation_params.n_samps_rwmh,
                                   abc_sim_keys[j],
-                                  initial_state=mocat.CDict(value=np.array([simulation_params.posterior_mean])))
+                                  initial_state=mocat.cdict(value=np.array([simulation_params.posterior_mean])))
 
 fig, ax = plt.subplots()
 ax.plot(linsp, prior_dens, color='darkorange', zorder=1, linewidth=lw, alpha=alp)

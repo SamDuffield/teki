@@ -17,7 +17,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 # Number of simulations from true data
 simulation_params.n_data = int(1e3)

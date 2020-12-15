@@ -18,7 +18,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 # Number repeated simulations per algorithm
 simulation_params.n_repeats = 5

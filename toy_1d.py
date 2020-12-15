@@ -20,7 +20,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 # EKI
 # Number of samples to generate
@@ -144,13 +144,13 @@ for j in range(len(simulation_params.abc_thresholds)):
                                   abc_sampler,
                                   simulation_params.n_samps_rwmh,
                                   abc_sim_keys[j],
-                                  initial_state=mocat.CDict(value=np.array([posterior_mean])))
+                                  initial_state=mocat.cdict(value=np.array([posterior_mean])))
 
 fig, ax = plot_abc_dens(abc_samps, xlim)
 fig.savefig(save_dir + '/LG_ABC_densities', dpi=300)
 
 
-times = mocat.CDict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
+times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
                          [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
                     ABC=[[simulation_params.abc_thresholds[i], abc_samps[i].time]
                          for i in range(len(simulation_params.abc_thresholds))])
@@ -246,13 +246,13 @@ for j in range(len(simulation_params.abc_thresholds)):
                                   abc_sampler,
                                   simulation_params.n_samps_rwmh,
                                   abc_sim_keys[j],
-                                  initial_state=mocat.CDict(value=np.array([0.])))
+                                  initial_state=mocat.cdict(value=np.array([0.])))
 
 fig, ax = plot_abc_dens(abc_samps, xlim)
 fig.savefig(save_dir + '/MMprior_LG_lik_ABC_densities', dpi=300)
 
 
-times = mocat.CDict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
+times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
                          [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
                     ABC=[[simulation_params.abc_thresholds[i], abc_samps[i].time]
                          for i in range(len(simulation_params.abc_thresholds))])
@@ -344,13 +344,13 @@ for j in range(len(simulation_params.abc_thresholds)):
                                   abc_sampler,
                                   simulation_params.n_samps_rwmh,
                                   abc_sim_keys[j],
-                                  initial_state=mocat.CDict(value=np.array([0.])))
+                                  initial_state=mocat.cdict(value=np.array([0.])))
 
 fig, ax = plot_abc_dens(abc_samps, xlim)
 fig.savefig(save_dir + '/MM_lik_ABC_densities', dpi=300)
 
 
-times = mocat.CDict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
+times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
                          [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
                     ABC=[[simulation_params.abc_thresholds[i], abc_samps[i].time]
                          for i in range(len(simulation_params.abc_thresholds))])

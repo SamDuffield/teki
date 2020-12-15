@@ -20,7 +20,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 # Number of simulations from true data
 simulation_params.n_data = int(1e3)
@@ -201,7 +201,7 @@ for i in range(simulation_params.n_repeats):
             abc_sampler.parameters.stepsize = abc_stepsize
             abc_samps = mocat.run_mcmc(gk_scenario,
                                        abc_sampler, simulation_params.n_samps_rwmh, random_key,
-                                       initial_state=mocat.CDict(
+                                       initial_state=mocat.cdict(
                                            value=pre_run_samps.value[np.argmin(pre_run_samps.distance)]))
             abc_samps.repeat_ind = i
             abc_samps.threshold = abc_threshold_single

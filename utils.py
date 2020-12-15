@@ -39,7 +39,7 @@ def dens_clean_ax(ax):
 
 def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=None):
     if simulation_params is None:
-        simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+        simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     eki_samps_all = onp.zeros((simulation_params.n_repeats,
                                len(simulation_params.n_samps_eki)), dtype='object')
@@ -75,7 +75,7 @@ def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=
 
 def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
     if simulation_params is None:
-        simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+        simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     rwmh_abc_samps_all = onp.zeros((simulation_params.n_repeats,
                                     len(simulation_params.abc_thresholds),
@@ -102,7 +102,7 @@ def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, si
 
                 abc_samps = mocat.run_mcmc(scenario,
                                            abc_sampler, simulation_params.n_samps_rwmh, random_key,
-                                           initial_state=mocat.CDict(
+                                           initial_state=mocat.cdict(
                                                value=pre_run_samps.value[np.argmin(pre_run_distances_concat)]))
                 abc_samps.repeat_ind = i
                 abc_samps.threshold = abc_threshold_single
@@ -116,7 +116,7 @@ def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, si
 
 def run_abc_smc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
     if simulation_params is None:
-        simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+        simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     abc_smc_samps_all = onp.zeros((simulation_params.n_repeats,
                                     len(simulation_params.n_samps_abc_smc)), dtype='object')
@@ -144,7 +144,7 @@ def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
     with open(save_dir + '/eki_samps', 'rb') as file:
         eki_samps_all = pickle.load(file)
 
-    simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+    simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     subplots_config = get_subplot_config(scenario.dim)
 
@@ -174,7 +174,7 @@ def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
     fig_eki.savefig(save_dir + '/EKI_densities', dpi=300)
 
     # Plot EKI densities at 1 and max_temp
-    post_samps = mocat.load_CDict(save_dir + '/eki_posterior.CDict')
+    post_samps = mocat.load_cdict(save_dir + '/eki_posterior.cdict')
     fig_eki, axes_eki = plt.subplots(*subplots_config)
     rav_axes_eki = np.ravel(axes_eki)
     for i in range(min(scenario.dim, 4)):
@@ -254,7 +254,7 @@ def plot_abc_mcmc(scenario, save_dir, ranges, true_params=None, param_names=None
     with open(save_dir + '/abc_rwmh_samps', 'rb') as file:
         rwmh_abc_samps_all = pickle.load(file)
 
-    simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+    simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     subplots_config = get_subplot_config(scenario.dim)
 
@@ -341,7 +341,7 @@ def plot_abc_mcmc(scenario, save_dir, ranges, true_params=None, param_names=None
 #     with open(save_dir + '/abc_smc_samps', 'rb') as file:
 #         abc_smc_samps_all = pickle.load(file)
 #
-#     simulation_params = mocat.load_CDict(save_dir + '/sim_params.CDict')
+#     simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 #
 #     subplots_config = get_subplot_config(scenario.dim)
 #

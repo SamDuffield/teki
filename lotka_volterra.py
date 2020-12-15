@@ -17,7 +17,7 @@ if not os.path.exists(save_dir):
 
 ########################################################################################################################
 # Simulation parameters
-simulation_params = mocat.CDict()
+simulation_params = mocat.cdict()
 
 # Number repeated simulations per algorithm
 simulation_params.n_repeats = 20
@@ -72,7 +72,7 @@ class TLotkaVolterraDist(abc.scenarios.TransformedLotkaVolterra):
     def distance_function(self,
                           summarised_simulated_data: np.ndarray) -> float:
         summarised_simulated_data = np.where(summarised_simulated_data == -np.inf, -1e5, summarised_simulated_data)
-        return np.abs(summarised_simulated_data - self.data)
+        return np.max(np.abs(summarised_simulated_data - self.data))
 
 
 lv_scenario = TLotkaVolterraDist()
