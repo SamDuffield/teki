@@ -109,10 +109,10 @@ each_summary_statistic = vmap(gk_scenario.summarise_data)(each_data)
 utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_summary_statistic)
 
 # Run MCMC ABC
-# utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
+utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
 
 # Run AMC SMC
-# utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
+utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
 
 ########################################################################################################################
 
@@ -126,11 +126,11 @@ utils.plot_eki(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_
                rmse_temp_round=0)
 
 # Plot ABC-MCMC
-# utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
 
 # Plot ABC-SMC
-# utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-#                    rmse_temp_round=0)
+utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+                   rmse_temp_round=0)
 
 
 
