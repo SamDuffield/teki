@@ -404,12 +404,13 @@ def plot_abc_smc(scenario, save_dir, ranges, true_params=None, param_names=None,
             samps = scenario.constrain(single_abc_samps.value[thresh_sched_ind, :, i]) \
                 if hasattr(scenario, 'constrain') else single_abc_samps.value[thresh_sched_ind, :, i]
             plot_kde(rav_axes_abc[i], samps, ranges[i], color='green',
-                     alpha=0.3 + 0.7 * thresh_ind / num_thresh_plot,
+                     alpha=0.3 + 0.7 * (1 - (thresh_ind + 1) / num_thresh_plot),
                      label=int(thresh))
             if true_params is not None:
                 rav_axes_abc[i].axvline(true_params[i], c='red')
             dens_clean_ax(rav_axes_abc[i])
-    plt.legend(title='Threshold', frameon=False)
+    handles, labels = ax.get_legend_handles_labels()
+    plt.legend(handles[::-1], labels[::-1], title='Threshold', frameon=False)
     fig_abc.tight_layout()
     fig_abc.savefig(save_dir + f'/abc_smc_densities', dpi=300)
 
