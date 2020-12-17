@@ -23,14 +23,14 @@ simulation_params = mocat.cdict()
 simulation_params.n_data = int(1e3)
 
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 3
+simulation_params.n_repeats = 20
 
 # EKI ##################################################################################################################
 # Number of samples to generate
-simulation_params.n_samps_eki = np.array([200, 1000, 5000])
+simulation_params.n_samps_eki = np.array([300, 1000, 5000])
 
 # threshold param
-simulation_params.eki_max_temp = 4.0
+simulation_params.eki_optim_max_sd = 0.2
 
 # ABC MCMC #############################################################################################################
 simulation_params.n_samps_rwmh = int(1e5)
@@ -39,7 +39,7 @@ simulation_params.n_samps_rwmh = int(1e5)
 simulation_params.n_abc_pre_run = int(1e3)
 
 # ABC distance thresholds
-simulation_params.abc_thresholds = np.array([3, 7, 15, 50])
+simulation_params.abc_thresholds = np.array([5, 10, 25, 50])
 
 # RWMH stepsizes
 simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
@@ -48,7 +48,6 @@ simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
 # ABC SMC ##############################################################################################################
 # Number of samples to generate
 simulation_params.n_samps_abc_smc = np.array([200, 1000, 5000])
-
 
 # Number of intermediate MCMC steps to take
 simulation_params.n_mcmc_steps_abc_smc = 10
@@ -105,17 +104,17 @@ each_data = vmap(generate_data)(repeat_sim_data_keys)
 each_summary_statistic = vmap(gk_scenario.summarise_data)(each_data)
 
 ########################################################################################################################
-# Run EKI
-########################################################################################################################
 
 # Run EKI
-# utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_summary_statistic)
+utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_summary_statistic)
 
-# Run RWMH ABC
+# Run MCMC ABC
 # utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
 
 # Run AMC SMC
 # utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
+
+########################################################################################################################
 
 param_names = (r'$A$', r'$B$', r'$g$', r'$k$')
 # ranges = ([0., 10.], [0., 5.], [0., 10.], [0., 5.])
@@ -123,10 +122,16 @@ plot_ranges = ([2., 4.], [0., 3.2], [0., 10.], [0., 5.])
 
 # Plot EKI
 utils.plot_eki(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-               y_range_mult2=1.0,
+               y_range_mult2=0.25,
                rmse_temp_round=0)
 
-# Plot ABC
-utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+# Plot ABC-MCMC
+# utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+
+# Plot ABC-SMC
+# utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+#                    rmse_temp_round=0)
+
+
 
 

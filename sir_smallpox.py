@@ -1,6 +1,5 @@
 ########################################################################################################################
-# Compare TEKI and ABC techniques for SIR model (2 dimensional)
-# Abakaliki Smallpox Outbreak (1975)
+# Compare TEKI and ABC techniques for SIR model (2 dimensional) - Abakaliki Smallpox Outbreak (1975)
 ########################################################################################################################
 
 import os
@@ -21,14 +20,14 @@ if not os.path.exists(save_dir):
 simulation_params = mocat.cdict()
 
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 5
+simulation_params.n_repeats = 20
 
 # EKI
 # Number of samples to generate
 simulation_params.n_samps_eki = np.array([500, 1000, 2000])
 
 # threshold param
-simulation_params.eki_max_temp = 3.0
+simulation_params.eki_optim_max_sd = 0.2
 
 # RWMH
 simulation_params.n_samps_rwmh = int(1e6)
@@ -37,14 +36,14 @@ simulation_params.n_samps_rwmh = int(1e6)
 simulation_params.n_abc_pre_run = int(1e5)
 
 # ABC distance thresholds
-simulation_params.abc_thresholds = np.array([5, 10, 15])
+simulation_params.abc_thresholds = np.array([10, 15, 20])
 
 # RWMH stepsizes
 simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
 
 # ABC SMC ##############################################################################################################
 # Number of samples to generate
-simulation_params.n_samps_abc_smc = np.array([200, 1000, 5000])
+simulation_params.n_samps_abc_smc = np.array([500, 2000, 5000])
 
 # Number of intermediate MCMC steps to take
 simulation_params.n_mcmc_steps_abc_smc = 10
@@ -91,39 +90,34 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
     def distance_function(self,
                           summarised_simulated_data: np.ndarray) -> float:
         diff_data = summarised_simulated_data - self.summary_statistic
-        return np.sqrt(np.square(diff_data[:-1]) + (diff_data[-1] / 50) ** 2)
+        return np.sqrt(np.square(diff_data[:-1]).sum() + (diff_data[-1] / 50) ** 2)
 
 
 sir_scenario = TSIRRemovalTimes()
 
 random_key = random.PRNGKey(0)
 
-# eki_temp_1 = mocat.run_tempered_ensemble_kalman_inversion(sir_scenario,
-#                                                           np.max(simulation_params.n_samps_eki),
-#                                                           random_key,
-#                                                           max_temp=1.)
-#
-# eki_temp_optim = mocat.run_tempered_ensemble_kalman_inversion(sir_scenario,
-#                                                               np.max(simulation_params.n_samps_eki),
-#                                                               random_key,
-#                                                               max_temp=simulation_params.eki_max_temp)
-
 # Run EKI
-# utils.run_eki(sir_scenario, save_dir, random_key)
+utils.run_eki(sir_scenario, save_dir, random_key)
 
 # Run RWMH ABC
-# utils.run_abc_mcmc(sir_scenario, save_dir, random_key)
+utils.run_abc_mcmc(sir_scenario, save_dir, random_key)
 
 # Run AMC SMC
 utils.run_abc_smc(sir_scenario, save_dir, random_key)
 
+
 param_names = (r'$\lambda$', r'$\gamma$')
 
 # Plot EKI
-plot_ranges_eki = [[0., 5.], [0, 0.3]]
-# utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.5,
-#                rmse_temp_round=0)
+plot_ranges_eki = [[0., 5.], [0, 1.]]
+utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.1,
+               rmse_temp_round=0)
 
-# Plot ABC
-plot_ranges_abc = [[0., 5.], [0, 0.3]]
-# utils.plot_abc_mcmc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names, y_range_mult2=1.0)
+
+plot_ranges_abc = [[0., 5.], [0, 5.]]
+# Plot ABC-MCMC
+utils.plot_abc_mcmc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names)
+
+# Plot ABC-SMC
+utils.plot_abc_smc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names)
