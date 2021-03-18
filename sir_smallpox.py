@@ -63,14 +63,13 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
     initial_si = np.array([119, 1])
     times = np.array([0., 13., 26., 39., 52., 65., 78., np.inf])
     data = np.array([2, 6, 3, 7, 8, 4, 0, 76])
-    summary_statistic = data
 
     prior_rates = np.ones(2) * 0.1
 
-    def simulate_data(self,
-                      x: np.ndarray,
-                      random_key: np.ndarray) -> np.ndarray:
-        sim_times, sim_si = self.likelihood_sample(x, random_key)
+    def likelihood_sample(self,
+                          x: np.ndarray,
+                          random_key: np.ndarray) -> np.ndarray:
+        sim_times, sim_si = self.simulate_times_and_si(x, random_key)
         max_time = np.max(sim_times)
         sim_times = np.where(sim_times == 0, np.inf, sim_times)
 
@@ -88,8 +87,8 @@ class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
         return np.append(active_pop_size_previous_times - active_pop_size_times, max_time)
 
     def distance_function(self,
-                          summarised_simulated_data: np.ndarray) -> float:
-        diff_data = summarised_simulated_data - self.summary_statistic
+                          simulated_data: np.ndarray) -> float:
+        diff_data = simulated_data - self.data
         return np.sqrt(np.square(diff_data[:-1]).sum() + (diff_data[-1] / 50) ** 2)
 
 
@@ -98,7 +97,7 @@ sir_scenario = TSIRRemovalTimes()
 random_key = random.PRNGKey(0)
 
 # Run EKI
-utils.run_eki(sir_scenario, save_dir, random_key)
+utils.run_eki_fixed_stepsize(sir_scenario, save_dir, random_key)
 
 # Run RWMH ABC
 utils.run_abc_mcmc(sir_scenario, save_dir, random_key)

@@ -4,7 +4,7 @@
 
 import os
 
-from jax import numpy as np, random, vmap
+from jax import numpy as jnp, random, vmap
 
 import mocat
 from mocat import abc
@@ -23,40 +23,57 @@ simulation_params = mocat.cdict()
 simulation_params.n_data = int(1e3)
 
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 20
+simulation_params.n_repeats = 5
 
 # EKI ##################################################################################################################
-# Number of samples to generate
-simulation_params.n_samps_eki = np.array([300, 1000, 5000])
+# Vary n_samps
+simulation_params.vary_n_samps_eki = jnp.asarray(10 ** jnp.linspace(2.5, 4.0, 6), dtype='int32')
 
-# threshold param
-simulation_params.eki_optim_max_sd = 0.2
+# Fixed n_samps
+simulation_params.fix_n_samps_eki = 1000
+
+# Fixed n_steps
+simulation_params.fix_n_steps = 50
+
+# Vary number of eki steps, fix n_samps
+simulation_params.vary_n_steps_eki = jnp.array([1, 10, 100, 1000])
+
+# max sd for optimisation
+simulation_params.optim_max_sd_eki = 0.1
+
+# max temp
+simulation_params.max_temp_eki = 50.
 
 # ABC MCMC #############################################################################################################
-simulation_params.n_samps_rwmh = int(1e5)
+# N max
+simulation_params.n_samps_abc_mcmc = int(1e6)
 
 # N pre-run
-simulation_params.n_abc_pre_run = int(1e3)
+simulation_params.n_pre_run_abc_mcmc = int(1e3)
 
-# ABC distance thresholds
-simulation_params.abc_thresholds = np.array([5, 10, 25, 50])
+# N cut_off for stepsize
+simulation_params.pre_run_ar_abc_mcmc = 0.1
 
-# RWMH stepsizes
-simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
+# RM params
+simulation_params.rm_stepsize_scale_mcmc = 1.
+simulation_params.rm_stepsize_neg_exponent = 2 / 3
 
 
 # ABC SMC ##############################################################################################################
-# Number of samples to generate
-simulation_params.n_samps_abc_smc = np.array([200, 1000, 5000])
-
-# Number of intermediate MCMC steps to take
-simulation_params.n_mcmc_steps_abc_smc = 10
+# Vary n_samps
+simulation_params.vary_n_samps_abc_smc = jnp.asarray(10 ** jnp.linspace(2.5, 4, 5), dtype='int32')
 
 # Maximum iterations
-simulation_params.max_iter_abc_smc = 100
+simulation_params.max_iter_abc_smc = 1000
 
 # Retain threshold parameter
-simulation_params.threshold_quantile_retain_abc_smc = 0.75
+simulation_params.threshold_quantile_retain_abc_smc = 0.9
+
+# Resample threshold parameter
+simulation_params.threshold_quantile_resample_abc_smc = 0.5
+
+# MCMC acceptance rate to terminate
+simulation_params.termination_alpha = 0.015
 
 ########################################################################################################################
 
@@ -65,73 +82,57 @@ simulation_params.save(save_dir + '/sim_params', overwrite=True)
 
 class GKThinOrder(abc.scenarios.GKTransformedUniformPrior):
     num_thin: int = 100
-    threshold = 5
-
-    def simulate_data(self,
-                      x: np.ndarray,
-                      random_key: np.ndarray) -> np.ndarray:
-        data_keys = random.split(random_key, simulation_params.n_data)
-        return vmap(self.likelihood_sample, (None, 0))(x, data_keys)
+    n_unsummarised_data: int = simulation_params.n_data
 
     def summarise_data(self,
-                       data: np.ndarray):
+                       data: jnp.ndarray):
         order_stats = data.sort()
-        thin_inds = np.linspace(0, len(data), self.num_thin, endpoint=False, dtype='int32')
+        thin_inds = jnp.linspace(0, len(data), self.num_thin, endpoint=False, dtype='int32')
         return order_stats[thin_inds]
-
-    def distance_function(self,
-                          summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
 
 
 gk_scenario = GKThinOrder()
 
-true_constrained_params = np.array([3., 1., 2., 0.5])
+true_constrained_params = jnp.array([3., 1., 2., 0.5])
 true_unconstrained_params = gk_scenario.unconstrain(true_constrained_params)
 
 random_key = random.PRNGKey(0)
-random_key, subkey = random.split(random_key)
-repeat_sim_data_keys = random.split(subkey, simulation_params.n_repeats)
+repeat_sim_data_keys = random.split(random_key, simulation_params.n_repeats + 1)
+random_key = repeat_sim_data_keys[-1]
 
-
-def generate_data(rkey):
-    sim_data_keys = random.split(rkey, simulation_params.n_data)
-    data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_params, sim_data_keys)
-    return data
-
-
-each_data = vmap(generate_data)(repeat_sim_data_keys)
-each_summary_statistic = vmap(gk_scenario.summarise_data)(each_data)
+each_data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_params, repeat_sim_data_keys[:-1])
 
 ########################################################################################################################
 
-# Run EKI
-utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_summary_statistic)
+# # Run EKI
+utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_data)
+#
+# # Run MCMC ABC
+# utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
+#
+# # Run AMC SMC
+# utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
 
-# Run MCMC ABC
-utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
-
-# Run AMC SMC
-utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_summary_statistic)
-
-########################################################################################################################
+# ########################################################################################################################
 
 param_names = (r'$A$', r'$B$', r'$g$', r'$k$')
 # ranges = ([0., 10.], [0., 5.], [0., 10.], [0., 5.])
-plot_ranges = ([2., 4.], [0., 3.2], [0., 10.], [0., 5.])
+plot_ranges = ([1.5, 4.], [0., 2.], [0., 10.], [0., 6.])
 
 # Plot EKI
-utils.plot_eki(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-               y_range_mult2=0.25,
-               rmse_temp_round=0)
+# utils.plot_eki(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+#                # y_range_mult=0.75
+#                bp_widths=0.1,
+#                rmse_temp_round=0)
+#
+# # Plot ABC-MCMC
+# utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+#
+# # Plot ABC-SMC
+# utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+#                    trim_thresholds=10,
+#                    rmse_temp_round=0)
 
-# Plot ABC-MCMC
-utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
 
-# Plot ABC-SMC
-utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-                   rmse_temp_round=0)
-
-
-
-
+# Plot RMSE
+utils.plot_rmse(gk_scenario, save_dir, true_constrained_params)

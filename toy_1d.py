@@ -3,20 +3,23 @@
 ########################################################################################################################
 
 import os
+import pickle
 
-from jax import numpy as np, random
+from jax import numpy as jnp, random
 from jax.scipy.stats import norm
 import matplotlib.pyplot as plt
-import numpy as onp
 
 import mocat
 from mocat import abc
-
+from teki import TemperedEKI
 from utils import plot_kde, dens_clean_ax
 
-save_dir = f'./simulations/toy_1d'
+save_dir = './simulations/toy_1d'
+samples_dir = save_dir + '/samples'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
+if not os.path.exists(samples_dir):
+    os.makedirs(samples_dir)
 
 ########################################################################################################################
 # Simulation parameters
@@ -26,141 +29,116 @@ simulation_params = mocat.cdict()
 # Number of samples to generate
 simulation_params.n_samps_eki = int(1e5)
 
-# optimisation desired sd
-simulation_params.eki_optim_max_sd = 0.2
+# Stepsizes for EKI
+simulation_params.stepsizes_eki = [0.01]
 
-# ABC MCMC
+# ABC
 # Number of samples to generate
-simulation_params.n_samps_rwmh = int(1e5)
+simulation_params.n_samps_abc = int(1e7)
 
-# ABC distance thresholds
-simulation_params.abc_mcmc_thresholds = np.array([0.5, 1, 5])
-
-# RWMH stepsizes
-simulation_params.rwmh_stepsize = 1e-1
-
-# ABC SMC
-# Number of samples to generate
-simulation_params.n_samps_abc_smc = int(1e5)
-
-# Number of intermediate MCMC steps to take
-simulation_params.n_mcmc_steps_abc_smc = 10
-
-# Maximum iterations
-simulation_params.max_iter_abc_smc = 20
-
-# Retain threshold parameter
-simulation_params.threshold_quantile_retain_abc_smc = 0.75
+# Distance thresholds
+simulation_params.abc_thresholds = jnp.array([0.5, 1, 5])
 
 simulation_params.save(save_dir + '/simulation_params', overwrite=True)
 
 prior_col = 'darkorange'
-lik_col = 'brown'
-post_col = 'red'
+lik_col = 'red'
+post_col = 'saddlebrown'
 
 ########################################################################################################################
 
 lw = 3.
-alp = 0.5
-
-
-def plot_eki_dens(temp1_samps, optim_temp_samps, optim_temp, xlim=(-7., 7.), y_range_mult=1.):
-    fig, ax = plt.subplots()
-    plot_kde(ax, temp1_samps, xlim=xlim, color='royalblue', zorder=4, alpha=0.5, linewidth=lw,
-             label='1.0')
-    plot_kde(ax, optim_temp_samps, xlim=xlim, color='royalblue', zorder=4, alpha=0.9, linewidth=lw,
-             label=f'{float(optim_temp):.1f}')
-
-    yl = ax.get_ylim()
-    ax.set_ylim(yl[0] * y_range_mult, yl[1] * y_range_mult)
-    dens_clean_ax(ax)
-    handles, labels = ax.get_legend_handles_labels()
-    plt.legend(handles[::-1], labels[::-1], title='Temperatures', frameon=False)
-    return fig, ax
-
-
-def plot_abc_mcmc_dens(abc_mcmc_samps, xlim=(-7., 7.), y_range_mult=1.):
-    fig, ax = plt.subplots()
-    for j in range(len(simulation_params.abc_mcmc_thresholds)):
-        plot_kde(ax, abc_mcmc_samps[j].value[:, 0], xlim=xlim, color='forestgreen', zorder=0,
-                 alpha=0.3 + 0.7 * j / len(simulation_params.abc_mcmc_thresholds), linewidth=lw,
-                 label=f'{float(simulation_params.abc_mcmc_thresholds[j]):.1f}')
-    yl = ax.get_ylim()
-    ax.set_ylim(yl[0] * y_range_mult, yl[1] * y_range_mult)
-    dens_clean_ax(ax)
-    plt.legend(title='Threshold', frameon=False)
-    return fig, ax
-
-
-def plot_abc_smc_dens(abc_smc_samps, xlim=(-7., 7.), y_range_mult=1.):
-    fig, ax = plt.subplots()
-    num_thresh_plot = min(4, len(abc_smc_samps.threshold_schedule))
-    thresh_sched_inds = np.linspace(0, abc_smc_samps.threshold_schedule.size - 1, num_thresh_plot, dtype='int32')
-
-    for j in range(len(simulation_params.abc_mcmc_thresholds)):
-        thresh_sched_ind = thresh_sched_inds[j]
-        thresh = abc_smc_samps.threshold_schedule[thresh_sched_ind]
-
-        plot_kde(ax, abc_smc_samps.value[thresh_sched_ind, :, 0], xlim=xlim, color='forestgreen', zorder=0,
-                 alpha=0.3 + 0.7 * (1 - (j + 1) / num_thresh_plot), linewidth=lw,
-                 label=f'{float(thresh):.1f}')
-    yl = ax.get_ylim()
-    ax.set_ylim(yl[0] * y_range_mult, yl[1] * y_range_mult)
-    dens_clean_ax(ax)
-    handles, labels = ax.get_legend_handles_labels()
-    plt.legend(handles[::-1], labels[::-1], title='Threshold', frameon=False)
-    return fig, ax
-
-
+alp = 0.3
 random_key = random.PRNGKey(0)
-random_key, eki_sim_key, abc_mcmc_sim_key, abc_smc_key = random.split(random_key, 4)
-abc_mcmc_sim_keys = random.split(abc_mcmc_sim_key, len(simulation_params.abc_mcmc_thresholds))
 
-cont_crit = lambda state, extra, prev_sim_data: \
-    np.max(np.sqrt(np.cov(state.value[:, 0]))) > simulation_params.eki_optim_max_sd
+
+def ensure_len_n(val, n):
+    val = jnp.asarray(val)
+    if val.size != n:
+        val = jnp.repeat(val, n)
+    return val
+
+
+def plot_sample_densities(samps, params, param_title=None, alpha=None, xlim=(-7, 7), y_range_mult=1.,
+                          **kwargs):
+    n_lines = len(samps)
+    if alpha is None:
+        alpha = jnp.linspace(alp, 1., n_lines)
+    alpha = ensure_len_n(alpha, n_lines)
+    fig, ax = plt.subplots()
+    for s, p, a in zip(samps, params, alpha):
+        plot_kde(ax, s, alpha=a, label=str(p), xlim=xlim, **kwargs)
+
+    yl = ax.get_ylim()
+    ax.set_ylim(yl[0] * y_range_mult, yl[1] * y_range_mult)
+    dens_clean_ax(ax)
+    handles, labels = ax.get_legend_handles_labels()
+    plt.legend(handles[::-1], labels[::-1], title=param_title, frameon=False)
+    return fig, ax
+
+
+def run_teki(scen, xlim):
+    scen_name = scen.name.replace(' ', '_')
+
+    keys = random.split(random_key, len(simulation_params.stepsizes_eki))
+    teki_samps = []
+    for s, rk in zip(simulation_params.stepsizes_eki, keys):
+        ts = jnp.arange(0, 1. + s, s)
+        teki_samps.append(mocat.run(scen,
+                                    TemperedEKI(temperature_schedule=ts),
+                                    n=simulation_params.n_samps_eki,
+                                    random_key=rk))
+
+    with open(samples_dir + f'/{scen_name}_teki', 'wb') as file:
+        pickle.dump(teki_samps, file)
+
+    fig, ax = plot_sample_densities([samp.value[-1, :, 0] for samp in teki_samps],
+                                    simulation_params.stepsizes_eki, 'Stepsize',
+                                    color='royalblue',
+                                    linewidth=lw, xlim=xlim)
+    fig.savefig(save_dir + f'/{scen_name}_teki', dpi=300)
+
+
+def run_abc(scen, xlim):
+    scen_name = scen.name.replace(' ', '_')
+
+    keys = random.split(random_key, len(simulation_params.abc_thresholds))
+    abc_samps = [mocat.run(scen,
+                           abc.VanillaABC(threshold=thresh),
+                           n=simulation_params.n_samps_abc,
+                           random_key=rk) for thresh, rk in zip(simulation_params.abc_thresholds, keys)]
+    with open(samples_dir + f'/{scen_name}_abc', 'wb') as file:
+        pickle.dump(abc_samps, file)
+
+    fig, ax = plot_sample_densities([samp.value[samp.log_weight > -jnp.inf, 0] for samp in abc_samps],
+                                    simulation_params.abc_thresholds, 'Threshold',
+                                    color='forestgreen',
+                                    linewidth=lw, xlim=xlim)
+    fig.savefig(save_dir + f'/{scen_name}_abc', dpi=300)
+
 
 ########################################################################################################################
 # Gaussian Prior
 # Linear Gaussian Likelihood
 
 prior_mean = 0.
-prior_sd = np.sqrt(5)
+prior_sd = jnp.sqrt(5)
 likelihood_mat = 1.
 likelihood_sd = 1.
 lg_data = 3.
 posterior_mean = 5 / 2
-posterior_sd = np.sqrt(5 / 6)
-
-
-class OneDimLG(abc.scenarios.LinearGaussian):
-    def distance_function(self,
-                          summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
-
-
-lg_scenario = OneDimLG(prior_mean=np.ones(1) * prior_mean,
-                       prior_covariance=np.eye(1) * prior_sd ** 2,
-                       likelihood_matrix=np.eye(1) * likelihood_mat,
-                       likelihood_covariance=np.eye(1) * likelihood_sd)
-lg_scenario.summary_statistic = lg_data
-
-eki_samps = mocat.run_tempered_ensemble_kalman_inversion(lg_scenario,
-                                                         simulation_params.n_samps_eki,
-                                                         eki_sim_key,
-                                                         data=lg_data)
-
-eki_samps_optim = mocat.run_tempered_ensemble_kalman_inversion(lg_scenario,
-                                                               simulation_params.n_samps_eki,
-                                                               eki_sim_key,
-                                                               data=lg_data,
-                                                               continuation_criterion=cont_crit)
+posterior_sd = jnp.sqrt(5 / 6)
 
 xlim = (-7, 7)
-fig, ax = plot_eki_dens(eki_samps.value[-1, :, 0], eki_samps_optim.value[-1, :, 0],
-                        eki_samps_optim.temperature_schedule[-1], xlim=xlim)
-fig.savefig(save_dir + '/LG_EKI_densities', dpi=300)
 
-linsp = np.linspace(xlim[0], xlim[1], 1000)
+lg_scenario = abc.scenarios.LinearGaussian(prior_mean=jnp.ones(1) * prior_mean,
+                                           prior_covariance=jnp.eye(1) * prior_sd ** 2,
+                                           likelihood_matrix=jnp.eye(1) * likelihood_mat,
+                                           likelihood_covariance=jnp.eye(1) * likelihood_sd)
+lg_scenario.data = lg_data
+
+# Plot true densities
+linsp = jnp.linspace(xlim[0], xlim[1], 1000)
 fig, ax = plt.subplots()
 prior_dens = norm.pdf(linsp, prior_mean, prior_sd)
 ax.plot(linsp, prior_dens, color=prior_col, zorder=1, linewidth=lw, alpha=alp, label='Prior')
@@ -170,35 +148,15 @@ post_dens = norm.pdf(linsp, posterior_mean, posterior_sd)
 ax.plot(linsp, post_dens, color=post_col, zorder=1, linewidth=lw, alpha=alp, label='Posterior')
 dens_clean_ax(ax)
 plt.legend(frameon=False)
-fig.savefig(save_dir + '/LG_true_densities', dpi=300)
+fig.savefig(save_dir + f'/{lg_scenario.name.replace(" ", "_")}_truth', dpi=300)
 
-abc_mcmc_samps = onp.zeros(len(simulation_params.abc_mcmc_thresholds), dtype='object')
-abc_mcmc_sampler = abc.RandomWalkABC(stepsize=simulation_params.rwmh_stepsize)
-for j in range(len(simulation_params.abc_mcmc_thresholds)):
-    abc_mcmc_sampler.parameters.threshold = float(simulation_params.abc_mcmc_thresholds[j])
-    abc_mcmc_samps[j] = mocat.run_mcmc(lg_scenario,
-                                       abc_mcmc_sampler,
-                                       simulation_params.n_samps_rwmh,
-                                       abc_mcmc_sim_keys[j],
-                                       initial_state=mocat.cdict(value=np.array([posterior_mean])))
+# TEKI
+if True:
+    run_teki(lg_scenario, xlim=xlim)
 
-fig, ax = plot_abc_mcmc_dens(abc_mcmc_samps, xlim)
-fig.savefig(save_dir + '/LG_abc_mcmc_densities', dpi=300)
-
-abc_smc_samps = abc.run_abc_smc_sampler(lg_scenario, simulation_params.n_samps_abc_smc, abc_smc_key,
-                                        mcmc_steps=simulation_params.n_mcmc_steps_abc_smc,
-                                        max_iter=simulation_params.max_iter_abc_smc,
-                                        threshold_quantile_retain=simulation_params.threshold_quantile_retain_abc_smc)
-
-fig, ax = plot_abc_smc_dens(abc_smc_samps, xlim)
-fig.savefig(save_dir + '/LG_abc_smc_densities', dpi=300)
-
-times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
-                         [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
-                    abc_mcmc=[[simulation_params.abc_mcmc_thresholds[i], abc_mcmc_samps[i].time]
-                              for i in range(len(simulation_params.abc_mcmc_thresholds))],
-                    abc_smc=[abc_smc_samps.threshold_schedule[-1], abc_smc_samps.time])
-times.save(save_dir + '/LG_times', overwrite=True)
+# Vanilla ABC
+if True:
+    run_abc(lg_scenario, xlim=xlim)
 
 
 ########################################################################################################################
@@ -209,206 +167,116 @@ class OneDimMMPriorLGLik(abc.ABCScenario):
     name = 'Multi-modal Prior'
 
     dim = 1
-    prior_means = np.array([-1., 1.]) * 7
-    prior_sd = np.sqrt(3)
+    prior_means = jnp.array([-1., 1.]) * 7
+    prior_sd = jnp.sqrt(3)
     likelihood_mat = 1.
     likelihood_sd = 10.
-    summary_statistic = 0.
+    data = 0.
 
     def prior_sample(self,
-                     random_key: np.ndarray) -> np.ndarray:
+                     random_key: jnp.ndarray) -> jnp.ndarray:
         norm_key, uniform_key = random.split(random_key)
         return self.prior_means[random.choice(norm_key, 2)] \
                + self.prior_sd * random.normal(random_key, (self.dim,))
 
     def prior_potential(self,
-                        x: np.ndarray) -> float:
-        return - np.log(np.exp(-0.5 * np.square((x - self.prior_means) / self.prior_sd)).sum())
+                        x: jnp.ndarray,
+                        random_key: jnp.ndarray = None) -> float:
+        return - jnp.log(jnp.exp(-0.5 * jnp.square((x - self.prior_means) / self.prior_sd)).sum())
 
     def likelihood_sample(self,
-                          x: np.ndarray,
-                          random_key: np.ndarray) -> np.ndarray:
+                          x: jnp.ndarray,
+                          random_key: jnp.ndarray) -> jnp.ndarray:
         return self.likelihood_mat * x + self.likelihood_sd * random.normal(random_key)
 
     def likelihood_potential(self,
-                             x: np.ndarray,
-                             y: np.ndarray) -> float:
-        return 0.5 * np.square((y - self.likelihood_mat * x) / self.likelihood_sd)
-
-    def summarise_data(self,
-                       data: np.ndarray) -> np.ndarray:
-        return data
-
-    def simulate_data(self,
-                      x: np.ndarray,
-                      random_key: np.ndarray) -> np.ndarray:
-        return self.likelihood_sample(x, random_key)
-
-    def distance_function(self,
-                          summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
+                             x: jnp.ndarray,
+                             random_key: jnp.ndarray = None) -> float:
+        return 0.5 * jnp.square((self.data - self.likelihood_mat * x) / self.likelihood_sd)
 
 
 mmprior_lg_lik_scenario = OneDimMMPriorLGLik()
-
-eki_samps = mocat.run_tempered_ensemble_kalman_inversion(mmprior_lg_lik_scenario,
-                                                         simulation_params.n_samps_eki,
-                                                         eki_sim_key,
-                                                         data=mmprior_lg_lik_scenario.summary_statistic)
-
-eki_samps_optim = mocat.run_tempered_ensemble_kalman_inversion(mmprior_lg_lik_scenario,
-                                                               simulation_params.n_samps_eki,
-                                                               eki_sim_key,
-                                                               data=mmprior_lg_lik_scenario.summary_statistic,
-                                                               continuation_criterion=cont_crit)
-
 xlim = (-12, 12)
-fig, ax = plot_eki_dens(eki_samps.value[-1, :, 0], eki_samps_optim.value[-1, :, 0],
-                        eki_samps_optim.temperature_schedule[-1], xlim=xlim)
-fig.savefig(save_dir + '/MMprior_LG_lik_EKI_densities', dpi=300)
 
-linsp = np.linspace(xlim[0], xlim[1], 1000)
+# Plot truth
+linsp = jnp.linspace(xlim[0], xlim[1], 1000)
 fig, ax = plt.subplots()
 prior_dens = norm.pdf(linsp, mmprior_lg_lik_scenario.prior_means[0], mmprior_lg_lik_scenario.prior_sd) * 0.5 \
              + norm.pdf(linsp, mmprior_lg_lik_scenario.prior_means[1], mmprior_lg_lik_scenario.prior_sd) * 0.5
 ax.plot(linsp, prior_dens, color=prior_col, zorder=1, linewidth=lw, alpha=alp, label='Prior')
-lik = norm.pdf(mmprior_lg_lik_scenario.likelihood_mat * linsp, mmprior_lg_lik_scenario.summary_statistic,
+lik = norm.pdf(mmprior_lg_lik_scenario.likelihood_mat * linsp, mmprior_lg_lik_scenario.data,
                mmprior_lg_lik_scenario.likelihood_sd)
 ax.plot(linsp, lik, color=lik_col, zorder=1, linewidth=lw, alpha=alp, label='Likelihood')
 post_dens = prior_dens * lik * 30
-ax.plot(linsp, post_dens, color='red', zorder=1, linewidth=lw, alpha=alp, label='Posterior')
+ax.plot(linsp, post_dens, color=post_col, zorder=1, linewidth=lw, alpha=alp, label='Posterior')
 dens_clean_ax(ax)
 plt.legend(frameon=False)
-fig.savefig(save_dir + '/MMprior_LG_lik_true_densities', dpi=300)
+fig.savefig(save_dir + f'/{mmprior_lg_lik_scenario.name.replace(" ", "_")}_truth', dpi=300)
 
-abc_mcmc_samps = onp.zeros(len(simulation_params.abc_mcmc_thresholds), dtype='object')
-abc_mcmc_sampler = abc.RandomWalkABC(stepsize=simulation_params.rwmh_stepsize)
-for j in range(len(simulation_params.abc_mcmc_thresholds)):
-    abc_mcmc_sampler.parameters.threshold = float(simulation_params.abc_mcmc_thresholds[j])
-    abc_mcmc_samps[j] = mocat.run_mcmc(mmprior_lg_lik_scenario,
-                                       abc_mcmc_sampler,
-                                       simulation_params.n_samps_rwmh,
-                                       abc_mcmc_sim_keys[j],
-                                       initial_state=mocat.cdict(value=np.array([0.])))
+# TEKI
+if True:
+    run_teki(mmprior_lg_lik_scenario, xlim=xlim)
 
-fig, ax = plot_abc_mcmc_dens(abc_mcmc_samps, xlim)
-fig.savefig(save_dir + '/MMprior_LG_lik_abc_mcmc_densities', dpi=300)
-
-abc_smc_samps = abc.run_abc_smc_sampler(mmprior_lg_lik_scenario, simulation_params.n_samps_abc_smc, abc_smc_key,
-                                        mcmc_steps=simulation_params.n_mcmc_steps_abc_smc,
-                                        max_iter=simulation_params.max_iter_abc_smc,
-                                        threshold_quantile_retain=simulation_params.threshold_quantile_retain_abc_smc)
-
-fig, ax = plot_abc_smc_dens(abc_smc_samps, xlim)
-fig.savefig(save_dir + '/MMprior_LG_lik_abc_smc_densities', dpi=300)
-
-times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
-                         [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
-                    abc_mcmc=[[simulation_params.abc_mcmc_thresholds[i], abc_mcmc_samps[i].time]
-                              for i in range(len(simulation_params.abc_mcmc_thresholds))],
-                    abc_smc=[abc_smc_samps.threshold_schedule[-1], abc_smc_samps.time])
-times.save(save_dir + '/MMprior_LG_lik_times', overwrite=True)
+# Vanilla ABC
+if True:
+    run_abc(mmprior_lg_lik_scenario, xlim=xlim)
 
 
 ########################################################################################################################
 # Gaussian Prior
 # Multi-modal Likelihood
 
+
 class OneDimGPriorMMLik(abc.ABCScenario):
     name = 'Multi-modal Likelihood'
 
     dim = 1
     prior_mean = 0.
-    prior_sd = np.sqrt(5)
+    prior_sd = jnp.sqrt(5)
     likelihood_sd = 3.
-    summary_statistic = 5.
+    data = 5.
 
     def prior_sample(self,
-                     random_key: np.ndarray) -> np.ndarray:
+                     random_key: jnp.ndarray) -> jnp.ndarray:
         return self.prior_mean + self.prior_sd * random.normal(random_key, (self.dim,))
 
     def prior_potential(self,
-                        x: np.ndarray) -> float:
-        return 0.5 * np.square((x - self.prior_mean) / self.prior_sd).sum()
+                        x: jnp.ndarray,
+                        random_key: jnp.ndarray = None) -> float:
+        return 0.5 * jnp.square((x - self.prior_mean) / self.prior_sd).sum()
 
     def likelihood_sample(self,
-                          x: np.ndarray,
-                          random_key: np.ndarray) -> np.ndarray:
-        return np.abs(x) + self.likelihood_sd * random.normal(random_key)
+                          x: jnp.ndarray,
+                          random_key: jnp.ndarray) -> jnp.ndarray:
+        return jnp.abs(x) + self.likelihood_sd * random.normal(random_key)
 
     def likelihood_potential(self,
-                             x: np.ndarray,
-                             y: np.ndarray) -> float:
-        return 0.5 * np.square((y - np.abs(x)) / self.likelihood_sd)
-
-    def summarise_data(self,
-                       data: np.ndarray) -> np.ndarray:
-        return data
-
-    def simulate_data(self,
-                      x: np.ndarray,
-                      random_key: np.ndarray) -> np.ndarray:
-        return self.likelihood_sample(x, random_key)
-
-    def distance_function(self,
-                          summarised_simulated_data: np.ndarray) -> float:
-        return np.sqrt(np.square(summarised_simulated_data - self.summary_statistic).sum())
+                             x: jnp.ndarray,
+                             random_key: jnp.ndarray = None) -> float:
+        return 0.5 * jnp.square((self.data - jnp.abs(x)) / self.likelihood_sd)
 
 
 mm_lik_scenario = OneDimGPriorMMLik()
-
-eki_samps = mocat.run_tempered_ensemble_kalman_inversion(mm_lik_scenario,
-                                                         simulation_params.n_samps_eki,
-                                                         eki_sim_key,
-                                                         data=mm_lik_scenario.summary_statistic)
-
-eki_samps_optim = mocat.run_tempered_ensemble_kalman_inversion(mm_lik_scenario,
-                                                               simulation_params.n_samps_eki,
-                                                               eki_sim_key,
-                                                               data=mm_lik_scenario.summary_statistic,
-                                                               continuation_criterion=cont_crit)
-
 xlim = (-12, 12)
-fig, ax = plot_eki_dens(eki_samps.value[-1, :, 0], eki_samps_optim.value[-1, :, 0],
-                        eki_samps_optim.temperature_schedule[-1], xlim=xlim)
-fig.savefig(save_dir + '/MM_lik_EKI_densities', dpi=300)
 
-linsp = np.linspace(xlim[0], xlim[1], 1000)
+linsp = jnp.linspace(xlim[0], xlim[1], 1000)
 fig, ax = plt.subplots()
 prior_dens = norm.pdf(linsp, mm_lik_scenario.prior_mean, mm_lik_scenario.prior_sd)
 ax.plot(linsp, prior_dens, color=prior_col, zorder=1, linewidth=lw, alpha=alp, label='Prior')
-lik = norm.pdf(np.abs(linsp), mm_lik_scenario.summary_statistic, mm_lik_scenario.likelihood_sd)
+lik = norm.pdf(jnp.abs(linsp), mm_lik_scenario.data, mm_lik_scenario.likelihood_sd)
 ax.plot(linsp, lik, color=lik_col, zorder=1, linewidth=lw, alpha=alp, label='Likelihood')
 post_dens = prior_dens * lik * 20
-ax.plot(linsp, post_dens, color='red', zorder=1, linewidth=lw, alpha=alp, label='Posterior')
+ax.plot(linsp, post_dens, color=post_col, zorder=1, linewidth=lw, alpha=alp, label='Posterior')
 dens_clean_ax(ax)
 plt.legend(frameon=False)
-fig.savefig(save_dir + '/MM_lik_true_densities', dpi=300)
+fig.savefig(save_dir + f'/{mm_lik_scenario.name.replace(" ", "_")}_truth', dpi=300)
 
-abc_mcmc_samps = onp.zeros(len(simulation_params.abc_mcmc_thresholds), dtype='object')
-abc_mcmc_sampler = abc.RandomWalkABC(stepsize=simulation_params.rwmh_stepsize)
-for j in range(len(simulation_params.abc_mcmc_thresholds)):
-    abc_mcmc_sampler.parameters.threshold = float(simulation_params.abc_mcmc_thresholds[j])
-    abc_mcmc_samps[j] = mocat.run_mcmc(mm_lik_scenario,
-                                       abc_mcmc_sampler,
-                                       simulation_params.n_samps_rwmh,
-                                       abc_mcmc_sim_keys[j],
-                                       initial_state=mocat.cdict(value=np.array([0.])))
 
-fig, ax = plot_abc_mcmc_dens(abc_mcmc_samps, xlim)
-fig.savefig(save_dir + '/MM_lik_abc_mcmc_densities', dpi=300)
+# TEKI
+if True:
+    run_teki(mm_lik_scenario, xlim=xlim)
 
-abc_smc_samps = abc.run_abc_smc_sampler(lg_scenario, simulation_params.n_samps_abc_smc, abc_smc_key,
-                                        mcmc_steps=simulation_params.n_mcmc_steps_abc_smc,
-                                        max_iter=simulation_params.max_iter_abc_smc,
-                                        threshold_quantile_retain=simulation_params.threshold_quantile_retain_abc_smc)
+# Vanilla ABC
+if True:
+    run_abc(mm_lik_scenario, xlim=xlim)
 
-fig, ax = plot_abc_smc_dens(abc_smc_samps, xlim)
-fig.savefig(save_dir + '/MM_lik_abc_smc_densities', dpi=300)
-
-times = mocat.cdict(eki=[[eki_samps.temperature_schedule[-1], eki_samps.time],
-                         [eki_samps_optim.temperature_schedule[-1], eki_samps_optim.time]],
-                    abc_mcmc=[[simulation_params.abc_mcmc_thresholds[i], abc_mcmc_samps[i].time]
-                              for i in range(len(simulation_params.abc_mcmc_thresholds))],
-                    abc_smc=[abc_smc_samps.threshold_schedule[-1], abc_smc_samps.time])
-times.save(save_dir + '/MM_lik_times', overwrite=True)
