@@ -70,13 +70,16 @@ num_plot_optim_temps = 10
 #     with open(save_dir + '/eki_optim', 'wb') as file:
 #         pickle.dump(eki_optim_all, file)
 
-def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=None):
+def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=None, optim_n_samps=False):
     if simulation_params is None:
         simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     n_samps = simulation_params.vary_n_samps_eki
 
     eki_samps_n_vary = np.zeros((simulation_params.n_repeats,
+                                 len(n_samps)), dtype='object')
+
+    eki_optim_n_vary = np.zeros((simulation_params.n_repeats,
                                  len(n_samps)), dtype='object')
 
     eki_samps_nsteps_vary = np.zeros(len(simulation_params.vary_n_steps_eki), dtype='object')
@@ -90,7 +93,7 @@ def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=
         next_temp = lambda state, extra: jnp.round(gamm ** extra.iter - 1, 4)
         for j, n_single in enumerate(n_samps):
             random_key, samp_key = random.split(random_key)
-            print(f'Iter={i} - EKI - N={n_single}')
+            print(f'Iter={i} - EKI samp - N={n_single}')
 
             eki_samp = mocat.run(scenario,
                                  TemperedEKI(next_temperature=next_temp,
@@ -101,8 +104,25 @@ def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=
             print(f'Time = {eki_samp.time} - Nans = {jnp.any(jnp.isnan(eki_samp.value[-1]))}')
             eki_samps_n_vary[i, j] = eki_samp.deepcopy()
 
+            random_key, samp_key = random.split(random_key)
+            print(f'Iter={i} - EKI optim - N={n_single}')
+
+            eki_optim = mocat.run(scenario,
+                                  TemperedEKI(next_temperature=next_temp,
+                                              term_max_sd=simulation_params.optim_max_sd_eki,
+                                              max_temperature=simulation_params.max_temp_eki),
+                                  n_single,
+                                  samp_key)
+            eki_optim.repeat_ind = i
+            print(
+                f'Time = {eki_optim.time} Final temp = {eki_optim.temperature[-1]}- Nans = {jnp.any(jnp.isnan(eki_optim.value[-1]))}')
+            eki_optim_n_vary[i, j] = eki_optim.deepcopy()
+
     with open(save_dir + '/eki_samps_n_vary', 'wb') as file:
         pickle.dump(eki_samps_n_vary, file)
+
+    with open(save_dir + '/eki_optim_n_vary', 'wb') as file:
+        pickle.dump(eki_optim_n_vary, file)
 
     # Vary n_steps
     for k, n_steps in enumerate(simulation_params.vary_n_steps_eki):
@@ -121,22 +141,22 @@ def run_eki(scenario, save_dir, random_key, repeat_data=None, simulation_params=
     with open(save_dir + '/eki_samps_nsteps_vary', 'wb') as file:
         pickle.dump(eki_samps_nsteps_vary, file)
 
-    # Optimisation
-    random_key, samp_key = random.split(random_key)
-    print(f'EKI optim - N={simulation_params.fix_n_samps_eki}  - n_steps={simulation_params.fix_n_steps}')
-    gamm = 2 ** (1 / simulation_params.fix_n_steps)
-    next_temp = lambda state, extra: jnp.round(gamm ** extra.iter - 1, 4)
-    eki_optim = mocat.run(scenario,
-                          TemperedEKI(next_temperature=next_temp,
-                                      term_max_sd=simulation_params.optim_max_sd_eki,
-                                      max_temperature=simulation_params.max_temp_eki),
-                          simulation_params.fix_n_samps_eki,
-                          samp_key)
-    print(f'Time = {eki_optim.time} - Final temperature = {eki_optim.temperature[-1]}'
-          f'- Nans = {jnp.any(jnp.isnan(eki_optim.value[-1]))}')
-
-    with open(save_dir + '/eki_optim', 'wb') as file:
-        pickle.dump(eki_optim, file)
+    # # Optimisation
+    # random_key, samp_key = random.split(random_key)
+    # print(f'EKI optim - N={simulation_params.fix_n_samps_eki}  - n_steps={simulation_params.fix_n_steps}')
+    # gamm = 2 ** (1 / simulation_params.fix_n_steps)
+    # next_temp = lambda state, extra: jnp.round(gamm ** extra.iter - 1, 4)
+    # eki_optim = mocat.run(scenario,
+    #                       TemperedEKI(next_temperature=next_temp,
+    #                                   term_max_sd=simulation_params.optim_max_sd_eki,
+    #                                   max_temperature=simulation_params.max_temp_eki),
+    #                       simulation_params.fix_n_samps_eki,
+    #                       samp_key)
+    # print(f'Time = {eki_optim.time} - Final temperature = {eki_optim.temperature[-1]}'
+    #       f'- Nans = {jnp.any(jnp.isnan(eki_optim.value[-1]))}')
+    #
+    # with open(save_dir + '/eki_optim', 'wb') as file:
+    #     pickle.dump(eki_optim, file)
 
 
 def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, simulation_params=None):
@@ -152,31 +172,32 @@ def run_abc_mcmc(scenario, save_dir, random_key, repeat_summarised_data=None, si
         if repeat_summarised_data is not None:
             scenario.data = repeat_summarised_data[i]
 
-            print(f'Iter={i} - ABC RMWH - N={n_max}')
-            random_key, pre_run_key = random.split(random_key)
+        print(f'Iter={i} - ABC RMWH - N={n_max}')
+        random_key, pre_run_key = random.split(random_key)
 
-            pre_run_samps = mocat.run(scenario, pre_run_sampler, simulation_params.n_pre_run_abc_mcmc, pre_run_key)
+        pre_run_samps = mocat.run(scenario, pre_run_sampler, simulation_params.n_pre_run_abc_mcmc, pre_run_key)
 
-            cut_off_dist = jnp.quantile(pre_run_samps.distance, simulation_params.pre_run_ar_abc_mcmc)
-            pre_run_accepted_samps = pre_run_samps.value[pre_run_samps.distance < cut_off_dist]
+        cut_off_dist = jnp.quantile(pre_run_samps.distance, simulation_params.pre_run_ar_abc_mcmc)
+        pre_run_accepted_samps = pre_run_samps.value[pre_run_samps.distance < cut_off_dist]
 
-            abc_sampler.parameters.stepsize = vmap(jnp.cov, (1,))(pre_run_accepted_samps) / scenario.dim * 2.38 ** 2
-            abc_sampler.parameters.threshold = cut_off_dist
+        abc_sampler.parameters.stepsize = vmap(jnp.cov, (1,))(pre_run_accepted_samps) / scenario.dim * 2.38 ** 2
+        abc_sampler.parameters.threshold = cut_off_dist
 
-            abc_samps = mocat.run(scenario,
-                                  abc_sampler,
-                                  n_max,
-                                  random_key,
-                                  initial_state=mocat.cdict(
-                                      value=pre_run_samps.value[jnp.argmin(pre_run_samps.distance)]),
-                                  correction=abc.RMMetropolisDiagStepsize(
-                                      rm_stepsize_scale=simulation_params.rm_stepsize_scale_mcmc,
-                                      rm_stepsize_neg_exponent=simulation_params.rm_stepsize_neg_exponent))
-            abc_samps.repeat_ind = i
-            abc_samps.num_sims = simulation_params.n_pre_run_abc_mcmc + n_max
-            print(f'time={abc_samps.time} - AR={abc_samps.alpha.mean()}')
+        abc_samps = mocat.run(scenario,
+                              abc_sampler,
+                              n_max,
+                              random_key,
+                              initial_state=mocat.cdict(
+                                  value=pre_run_samps.value[jnp.argmin(pre_run_samps.distance)]),
+                              correction=abc.RMMetropolisDiagStepsize(
+                                  rm_stepsize_scale=simulation_params.rm_stepsize_scale_mcmc,
+                                  rm_stepsize_neg_exponent=simulation_params.rm_stepsize_neg_exponent))
+        abc_samps.repeat_ind = i
+        abc_samps.num_sims = simulation_params.n_pre_run_abc_mcmc + n_max
+        print(f'time={abc_samps.time} - AR={abc_samps.alpha.mean()}')
 
-            rwmh_abc_samps_all[i] = abc_samps.deepcopy()
+        rwmh_abc_samps_all[i] = abc_samps.deepcopy()
+
     with open(save_dir + '/abc_mcmc_samps', 'wb') as file:
         pickle.dump(rwmh_abc_samps_all, file)
 
@@ -301,29 +322,120 @@ def plot_densities(scenario, vals, true_params, param_names, ranges, y_range_mul
     return fig, axes
 
 
+def plot_joint_scatters(vals, param_names, true_params=None, lims=None, color='black', **kwargs):
+    d = vals.shape[-1]
+    fig, axes = plt.subplots(d, d)
+    for i in range(d):
+        for j in range(d):
+            if i > j:
+                axes[i, j].scatter(vals[:, i], vals[:, j], color=color, **kwargs)
+                if true_params is not None:
+                    axes[i, j].scatter(true_params[i], true_params[j], color='red', marker='x')
+                if lims is not None:
+                    axes[i, j].set_xlim(lims[i])
+                    axes[i, j].set_ylim(lims[j])
+                axes[i, j].set_xlabel(param_names[i])
+                axes[i, j].set_ylabel(param_names[j])
+
+            elif i == j:
+                axes[i, j].hist(vals[:, i], bins=50, color=color)
+                axes[i, j].set_yticks([])
+                axes[i, j].spines['left'].set_visible(False)
+                if true_params is not None:
+                    axes[i, j].axvline(true_params[i], color='red')
+                if lims is not None:
+                    axes[i, j].set_xlim(lims[i])
+                axes[i, j].set_xlabel(param_names[i])
+
+            axes[i, j].spines['top'].set_visible(False)
+            axes[i, j].spines['right'].set_visible(False)
+
+            if i < j:
+                axes[i, j].spines['bottom'].set_visible(False)
+                axes[i, j].spines['left'].set_visible(False)
+                axes[i, j].set_xticks([])
+                axes[i, j].set_yticks([])
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_joint_contours(vals, param_names, true_params=None, lims=None, cmap='jet', hist_color='black', **kwargs):
+    d = vals.shape[-1]
+    fig, axes = plt.subplots(d, d)
+    lims_not_none = lims is not None
+    if not lims_not_none:
+        lims = [[vals[:, i].min(), vals[:, i].max()] for i in range(d)]
+
+    for i in range(d):
+        for j in range(d):
+            if i > j:
+                xmin, xmax = lims[i]
+                ymin, ymax = lims[j]
+
+                xx, yy = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+                positions = np.vstack([xx.ravel(), yy.ravel()])
+                values = np.vstack([vals[:, i], vals[:, j]])
+                kernel = gaussian_kde(values)
+                f = np.reshape(kernel(positions).T, xx.shape)
+
+                axes[i, j].contourf(xx, yy, f, cmap=cmap, **kwargs)
+                if true_params is not None:
+                    axes[i, j].scatter(true_params[i], true_params[j], color='red', marker='x')
+                if lims_not_none:
+                    axes[i, j].set_xlim(lims[i])
+                    axes[i, j].set_ylim(lims[j])
+                axes[i, j].set_xlabel(param_names[i])
+                axes[i, j].set_ylabel(param_names[j])
+            elif i == j:
+                # axes[i, j].hist(vals[:, i], bins=50, color=hist_color)
+
+                linsp = jnp.linspace(*lims[i], 100)
+                dens = gaussian_kde(vals[:, i])
+                axes[i, j].plot(linsp, dens(linsp), color=hist_color)
+                if true_params is not None:
+                    axes[i, j].axvline(true_params[i], color='red')
+                axes[i, j].set_yticks([])
+                axes[i, j].spines['left'].set_visible(False)
+                if lims_not_none:
+                    axes[i, j].set_xlim(lims[i])
+                axes[i, j].set_xlabel(param_names[i])
+
+            axes[i, j].spines['top'].set_visible(False)
+            axes[i, j].spines['right'].set_visible(False)
+
+            if i < j:
+                axes[i, j].spines['bottom'].set_visible(False)
+                axes[i, j].spines['left'].set_visible(False)
+                axes[i, j].set_xticks([])
+                axes[i, j].set_yticks([])
+    fig.tight_layout()
+    return fig, axes
+
+
 def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_range_mult=1.0, rmse_temp_round=1,
              optim_ranges=None, bp_widths=1.0,
              legend_size=10, legend_ax=0):
-    with open(save_dir + '/eki_samp', 'rb') as file:
+    with open(save_dir + '/eki_samps_n_vary', 'rb') as file:
         eki_samp_all = pickle.load(file)
 
-    with open(save_dir + '/eki_optim', 'rb') as file:
+    with open(save_dir + '/eki_samps_nsteps_vary', 'rb') as file:
+        eki_samps_nsteps_vary = pickle.load(file)
+
+    with open(save_dir + '/eki_optim_n_vary', 'rb') as file:
         eki_optim_all = pickle.load(file)
 
     if optim_ranges is None:
         optim_ranges = ranges
-
     simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
     # Plot sampling densities by n_steps
-    eki_nsampsmax_single = eki_samp_all[0, -1]
-    n_steps_lines = len(eki_nsampsmax_single)
-    eki_samp_vals = [a.value[-1] for a in eki_nsampsmax_single]
+    n_steps_lines = len(eki_samps_nsteps_vary)
+    eki_samp_vals = [a.value[-1] for a in eki_samps_nsteps_vary]
 
     samp_steps_fig, samp_steps_axes = plot_densities(scenario, eki_samp_vals,
                                                      true_params=true_params, param_names=param_names,
                                                      ranges=ranges, y_range_mult=y_range_mult,
-                                                     labels=simulation_params.n_steps_eki,
+                                                     labels=simulation_params.vary_n_steps_eki,
                                                      color='blue',
                                                      # alpha=0.2 + 0.8 * np.arange(n_steps_lines) / n_steps_lines,
                                                      alpha=0.8 - 0.7 * np.arange(n_steps_lines) / n_steps_lines,
@@ -332,11 +444,11 @@ def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
     handles, labels = leg_ax.get_legend_handles_labels()
     leg = leg_ax.legend(handles[::-1], labels[::-1], frameon=False, prop={'size': legend_size})
     leg.set_title(title='Number of Steps', prop={'size': legend_size})
-    samp_steps_fig.savefig(save_dir + '/EKI_temp1_varyntseps', dpi=300)
+    samp_steps_fig.savefig(save_dir + '/EKI_temp1_varynsteps', dpi=300)
 
     # Plot optimisation by temperature
     # Boxplot
-    eki_optim_single = eki_optim_all[0, -1, -1]
+    eki_optim_single = eki_optim_all[0, -1]
     n_optim_temps = 7
     n_optim_inds = np.linspace(0., len(eki_optim_single.temperature) - 1, n_optim_temps, endpoint=True, dtype='int')
     temps = eki_optim_single.temperature[n_optim_inds]
@@ -382,13 +494,24 @@ def plot_eki(scenario, save_dir, ranges, true_params=None, param_names=None, y_r
                                                      linewidth=2)
     leg_ax = samp_temps_axes if scenario.dim == 1 else samp_temps_axes.ravel()[legend_ax]
     handles, labels = leg_ax.get_legend_handles_labels()
-    # leg = samp_temps_fig.legend(handles[::-1], labels[::-1], frameon=False, prop={'size': legend_size/2})
-    # leg.set_title(title='Temperature', prop={'size': legend_size/2})
     leg = samp_temps_fig.legend(handles[::-1], labels[::-1], frameon=False, loc="center right",
                                 borderaxespad=0.1)
     leg.set_title(title='Temperature')
     plt.subplots_adjust(right=0.85)
     samp_temps_fig.savefig(save_dir + '/EKI_temp1_varytemps', dpi=300)
+
+    # Joint dims
+    samps = eki_samp_all[0, -1].value[-1]
+    if np.any(np.isnan(samps)):
+        samps = eki_samp_all[0, -2].value[-1]
+    if hasattr(scenario, 'constrain'):
+        samps = scenario.constrain(samps)
+    fig_joint, ax_joint = plot_joint_scatters(samps, param_names, true_params=true_params, color='blue', s=0.5,
+                                              lims=ranges)
+    fig_joint.savefig(save_dir + '/EKI_joint_dens', dpi=300)
+    fig_joint_cont, ax_joint_cont = plot_joint_contours(samps, param_names, true_params=true_params,
+                                                        cmap='Blues', hist_color='blue', lims=ranges)
+    fig_joint_cont.savefig(save_dir + '/EKI_joint_dens_contour', dpi=300)
 
     #
     #
@@ -615,7 +738,7 @@ def plot_abc_mcmc(scenario, save_dir, ranges, true_params=None, param_names=None
 
 def plot_abc_smc(scenario, save_dir, ranges, true_params=None, param_names=None,
                  rmse_temp_round=1, thresh_cut_off=200,
-                 y_range_mult=1, trim_thresholds=0,
+                 y_range_mult=1, trim_thresholds=0, joint_dims=(0, 1),
                  legend_size=10, legend_ax=0, legend_loc='upper left'):
     with open(save_dir + '/abc_smc_samps', 'rb') as file:
         abc_smc_samps_all = pickle.load(file)
@@ -666,6 +789,20 @@ def plot_abc_smc(scenario, save_dir, ranges, true_params=None, param_names=None,
                         loc=legend_loc)
     leg.set_title(title='Threshold', prop={'size': legend_size})
     thresh_dens_fig.savefig(save_dir + '/abc_smc_densities', dpi=300)
+
+    # Joint dims
+    samps_cdict = abc_smc_samps_all[0, -1]
+    samps = samps_cdict.value[-1][samps_cdict.log_weight[-1] > -jnp.inf]
+    if hasattr(scenario, 'constrain'):
+        samps = scenario.constrain(samps)
+
+    fig_joint, ax_joint = plot_joint_scatters(samps, param_names, true_params=true_params, color='green', s=0.5,
+                                              lims=ranges)
+    fig_joint.savefig(save_dir + '/abc_smc_joint_dens', dpi=300)
+
+    fig_joint_cont, ax_joint_cont = plot_joint_contours(samps, param_names, true_params=true_params,
+                                                        cmap='Greens', hist_color='green', lims=ranges)
+    fig_joint_cont.savefig(save_dir + '/abc_smc_joint_dens_contour', dpi=300)
 
     #
     # if true_params is not None:
@@ -730,6 +867,9 @@ def plot_rmse(scenario, save_dir, true_params):
     with open(save_dir + '/eki_samps_n_vary', 'rb') as file:
         eki_samp_all = pickle.load(file)
 
+    with open(save_dir + '/eki_optim_n_vary', 'rb') as file:
+        eki_optim_all = pickle.load(file)
+
     with open(save_dir + '/abc_mcmc_samps', 'rb') as file:
         abc_mcmc_samps = pickle.load(file)
 
@@ -747,6 +887,13 @@ def plot_rmse(scenario, save_dir, true_params):
                               for j in simulation_params.vary_n_samps_eki]
                              for _ in range(n_repeats)])
 
+    eki_optim_rmses = np.array([[calculate_rmse(transform(eki_optim_all[i, j].value[-1]), true_params)
+                                 for j in range(len(simulation_params.vary_n_samps_eki))]
+                                for i in range(n_repeats)])
+    eki_optim_num_sims = np.array([[simulation_params.vary_n_samps_eki[j] * (eki_optim_all[i, j].temperature.size - 1)
+                                    for j in range(len(simulation_params.vary_n_samps_eki))]
+                                   for i in range(n_repeats)])
+
     abc_smc_rmses = np.array([[calculate_rmse(transform(abc_smc_samps_all[i, j].value[-1]), true_params)
                                for j in range(len(simulation_params.vary_n_samps_abc_smc))]
                               for i in range(n_repeats)])
@@ -754,16 +901,16 @@ def plot_rmse(scenario, save_dir, true_params):
                               for j in range(len(simulation_params.vary_n_samps_abc_smc))]
                              for i in range(n_repeats)])
 
-    n_min = np.min([simulation_params.vary_n_samps_eki, simulation_params.vary_n_samps_abc_smc])
-    n_max = np.max([simulation_params.vary_n_samps_eki, simulation_params.vary_n_samps_abc_smc])
+    n_min = np.min([simulation_params.vary_n_samps_eki.min(), simulation_params.vary_n_samps_abc_smc.min()])
+    n_max = np.max([simulation_params.vary_n_samps_eki.max(), simulation_params.vary_n_samps_abc_smc.max()])
     n_min_log10 = np.log(n_min) / np.log(10)
     n_max_log10 = np.log(n_max) / np.log(10)
     num_points_mcmc = np.maximum(len(simulation_params.vary_n_samps_eki), len(simulation_params.vary_n_samps_abc_smc))
     n_mcmc = np.asarray(10 ** np.linspace(n_min_log10, n_max_log10, num_points_mcmc, endpoint=True), dtype='int')
 
     abc_mcmc_n_rmses = np.array([[calculate_rmse(transform(abc_mcmc_samps[i].value[:j]), true_params)
-                                for j in n_mcmc]
-                               for i in range(n_repeats)])
+                                  for j in n_mcmc]
+                                 for i in range(n_repeats)])
 
     eki_n_samps_repeat = jnp.repeat(simulation_params.vary_n_samps_eki[jnp.newaxis], n_repeats, 0)
     mcmc_n_samps_repeat = jnp.repeat(n_mcmc[jnp.newaxis], n_repeats, 0)
@@ -771,9 +918,11 @@ def plot_rmse(scenario, save_dir, true_params):
 
     fig_n, ax_n = plt.subplots()
     ax_n.scatter(eki_n_samps_repeat, eki_rmses, color='blue', label='TEKI')
+    ax_n.scatter(eki_n_samps_repeat, eki_optim_rmses, color='aqua', label='TEKI Optim')
     ax_n.scatter(mcmc_n_samps_repeat, abc_mcmc_n_rmses, color='orange', label='ABC-MCMC')
     ax_n.scatter(smc_n_samps_repeat, abc_smc_rmses, color='green', label='ABC-SMC')
     ax_n.set_xscale('log')
+    ax_n.set_xlim([10 ** np.floor(n_min_log10), 10 ** np.ceil(n_max_log10)])
     ax_n.spines['top'].set_visible(False)
     ax_n.spines['right'].set_visible(False)
     ax_n.set_xlabel(r'$N$')
@@ -781,16 +930,18 @@ def plot_rmse(scenario, save_dir, true_params):
     ax_n.legend(frameon=False)
     fig_n.savefig(save_dir + '/rmse_n_scatter', dpi=300)
 
-
-    nsim_min = np.min([eki_num_sims, abc_smc_sims])
-    nsim_max = np.max([eki_num_sims, abc_smc_sims])
+    nsim_min = np.min([eki_num_sims.min(), abc_smc_sims.min()])
+    nsim_max = np.max([eki_num_sims.max(), abc_smc_sims.max()])
+    nsim_max = np.minimum(nsim_max, simulation_params.n_samps_abc_mcmc)
     nsim_min_log10 = np.log(nsim_min) / np.log(10)
     nsim_max_log10 = np.log(nsim_max) / np.log(10)
-    nsim_mcmc = np.asarray(10 ** np.linspace(nsim_min_log10, nsim_max_log10, num_points_mcmc, endpoint=True), dtype='int')
+    nsim_mcmc = np.asarray(10 ** np.linspace(nsim_min_log10, nsim_max_log10, num_points_mcmc, endpoint=True),
+                           dtype='int')
 
-    abc_mcmc_nsims_rmses = np.array([[calculate_rmse(transform(abc_mcmc_samps[i].value[:(j-simulation_params.n_pre_run_abc_mcmc)]), true_params)
-                                for j in nsim_mcmc]
-                               for i in range(n_repeats)])
+    abc_mcmc_nsims_rmses = np.array(
+        [[calculate_rmse(transform(abc_mcmc_samps[i].value[:(j - simulation_params.n_pre_run_abc_mcmc)]), true_params)
+          for j in nsim_mcmc]
+         for i in range(n_repeats)])
 
     abc_mcmc_sims = np.array([[j + simulation_params.n_pre_run_abc_mcmc
                                for j in nsim_mcmc]
@@ -798,19 +949,229 @@ def plot_rmse(scenario, save_dir, true_params):
 
     fig_nsims, ax_nsims = plt.subplots()
     ax_nsims.scatter(eki_num_sims, eki_rmses, color='blue', label='TEKI')
+    ax_nsims.scatter(eki_optim_num_sims, eki_optim_rmses, color='aqua', label='TEKI Optim')
     ax_nsims.scatter(abc_mcmc_sims, abc_mcmc_nsims_rmses, color='orange', label='ABC-MCMC')
     ax_nsims.scatter(abc_smc_sims, abc_smc_rmses, color='green', label='ABC-SMC')
     ax_nsims.set_xscale('log')
+    ax_nsims.set_xlim([10 ** np.floor(nsim_min_log10), 10 ** np.ceil(nsim_max_log10)])
     ax_nsims.spines['top'].set_visible(False)
     ax_nsims.spines['right'].set_visible(False)
     ax_nsims.set_xlabel('Likelihood Simulations')
     ax_nsims.set_ylabel('RMSE')
     ax_nsims.legend(frameon=False)
-    fig_n.savefig(save_dir + '/rmse_nsims_scatter', dpi=300)
+    fig_nsims.savefig(save_dir + '/rmse_nsims_scatter', dpi=300)
 
 
+def plot_dists(scenario, save_dir, repeat_summarised_data=None):
+    simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
+
+    with open(save_dir + '/eki_samps_n_vary', 'rb') as file:
+        eki_samp_all = pickle.load(file)
+
+    with open(save_dir + '/abc_mcmc_samps', 'rb') as file:
+        abc_mcmc_samps = pickle.load(file)
+
+    with open(save_dir + '/abc_smc_samps', 'rb') as file:
+        abc_smc_samps_all = pickle.load(file)
+
+    n_repeats = simulation_params.n_repeats
+
+    eki_dists = np.zeros((n_repeats, len(simulation_params.vary_n_samps_eki)))
+    for i in range(n_repeats):
+        if repeat_summarised_data is not None:
+            scenario.data = repeat_summarised_data[i]
+        for j in range(len(simulation_params.vary_n_samps_eki)):
+            if not jnp.any(jnp.isnan(eki_samp_all[i, j].simulated_data[-1])):
+                eki_dists[i, j] = vmap(scenario.distance_function)(eki_samp_all[i, j].simulated_data[-1]).mean()
+            else:
+                eki_dists[i, j] = np.nan
+
+    eki_num_sims = np.array([[j * simulation_params.fix_n_steps
+                              for j in simulation_params.vary_n_samps_eki]
+                             for _ in range(n_repeats)])
+
+    abc_smc_dists = np.array([[abc_smc_samps_all[i, j].distance[-1].mean()
+                               for j in range(len(simulation_params.vary_n_samps_abc_smc))]
+                              for i in range(n_repeats)])
+    abc_smc_sims = np.array([[abc_smc_samps_all[i, j].num_sims
+                              for j in range(len(simulation_params.vary_n_samps_abc_smc))]
+                             for i in range(n_repeats)])
+
+    n_min = np.min([simulation_params.vary_n_samps_eki.min(), simulation_params.vary_n_samps_abc_smc.min()])
+    n_max = np.max([simulation_params.vary_n_samps_eki.max(), simulation_params.vary_n_samps_abc_smc.max()])
+    n_min_log10 = np.log(n_min) / np.log(10)
+    n_max_log10 = np.log(n_max) / np.log(10)
+    num_points_mcmc = np.maximum(len(simulation_params.vary_n_samps_eki), len(simulation_params.vary_n_samps_abc_smc))
+    n_mcmc = np.asarray(10 ** np.linspace(n_min_log10, n_max_log10, num_points_mcmc, endpoint=True), dtype='int')
+
+    abc_mcmc_n_dists = np.array([[abc_mcmc_samps[i].distance[:j].mean()
+                                  for j in n_mcmc]
+                                 for i in range(n_repeats)])
+
+    eki_n_samps_repeat = jnp.repeat(simulation_params.vary_n_samps_eki[jnp.newaxis], n_repeats, 0)
+    mcmc_n_samps_repeat = jnp.repeat(n_mcmc[jnp.newaxis], n_repeats, 0)
+    smc_n_samps_repeat = jnp.repeat(simulation_params.vary_n_samps_abc_smc[jnp.newaxis], n_repeats, 0)
+
+    fig_n, ax_n = plt.subplots()
+    ax_n.scatter(eki_n_samps_repeat, eki_dists, color='blue', label='TEKI')
+    ax_n.scatter(mcmc_n_samps_repeat, abc_mcmc_n_dists, color='orange', label='ABC-MCMC')
+    ax_n.scatter(smc_n_samps_repeat, abc_smc_dists, color='green', label='ABC-SMC')
+    ax_n.set_xscale('log')
+    ax_n.spines['top'].set_visible(False)
+    ax_n.spines['right'].set_visible(False)
+    ax_n.set_xlabel(r'$N$')
+    ax_n.set_ylabel('Distance')
+    ax_n.legend(frameon=False)
+    fig_n.savefig(save_dir + '/distance_n_scatter', dpi=300)
+
+    nsim_min = np.min([eki_num_sims.min(), abc_smc_sims.min()])
+    nsim_max = np.max([eki_num_sims.max(), abc_smc_sims.max()])
+    nsim_min_log10 = np.log(nsim_min) / np.log(10)
+    nsim_max_log10 = np.log(nsim_max) / np.log(10)
+    nsim_mcmc = np.asarray(10 ** np.linspace(nsim_min_log10, nsim_max_log10, num_points_mcmc, endpoint=True),
+                           dtype='int')
+
+    abc_mcmc_nsims_dists = np.array(
+        [[abc_mcmc_samps[i].distance[:(j - simulation_params.n_pre_run_abc_mcmc)].mean()
+          for j in nsim_mcmc]
+         for i in range(n_repeats)])
+
+    abc_mcmc_sims = np.array([[j + simulation_params.n_pre_run_abc_mcmc
+                               for j in nsim_mcmc]
+                              for _ in range(n_repeats)])
+
+    fig_nsims, ax_nsims = plt.subplots()
+    ax_nsims.scatter(eki_num_sims, eki_dists, color='blue', label='TEKI')
+    ax_nsims.scatter(abc_mcmc_sims, abc_mcmc_nsims_dists, color='orange', label='ABC-MCMC')
+    ax_nsims.scatter(abc_smc_sims, abc_smc_dists, color='green', label='ABC-SMC')
+    ax_nsims.set_xscale('log')
+    ax_nsims.spines['top'].set_visible(False)
+    ax_nsims.spines['right'].set_visible(False)
+    ax_nsims.set_xlabel('Likelihood Simulations')
+    ax_nsims.set_ylabel('Distance')
+    ax_nsims.legend(frameon=False)
+    fig_nsims.savefig(save_dir + '/distance_nsims_scatter', dpi=300)
 
 
+def plot_res_dists(scenario, save_dir, n_resamps, repeat_summarised_data=None):
+    simulation_params = mocat.load_cdict(save_dir + '/sim_params.cdict')
 
+    with open(save_dir + '/eki_samps_n_vary', 'rb') as file:
+        eki_samp_all = pickle.load(file)
 
+    with open(save_dir + '/abc_mcmc_samps', 'rb') as file:
+        abc_mcmc_samps = pickle.load(file)
 
+    with open(save_dir + '/abc_smc_samps', 'rb') as file:
+        abc_smc_samps_all = pickle.load(file)
+
+    n_repeats = simulation_params.n_repeats
+
+    random_key = random.PRNGKey(0)
+
+    def estimate_dist(vals, rk):
+        vals = jnp.asarray(vals)
+        n_vals = len(vals)
+        rks = random.split(rk, n_vals * n_resamps).reshape(n_vals, n_resamps, 2)
+        return vmap(lambda i: vmap(lambda j:
+                                   scenario.distance_function(scenario.likelihood_sample(vals[i], rks[i, j])
+                                                              ))(jnp.arange(n_resamps)).mean()) \
+            (jnp.arange(n_vals)).mean()
+
+    eki_dists = np.zeros((n_repeats, len(simulation_params.vary_n_samps_eki)))
+    for i in range(n_repeats):
+        print(f'EKI dist sims - Iter {i}')
+        if repeat_summarised_data is not None:
+            scenario.data = repeat_summarised_data[i]
+        for j in range(len(simulation_params.vary_n_samps_eki)):
+            if not jnp.any(jnp.isnan(eki_samp_all[i, j].simulated_data[-1])):
+                random_key, subkey = random.split(random_key)
+                eki_dists[i, j] = estimate_dist(eki_samp_all[i, j].value[-1], subkey)
+            else:
+                eki_dists[i, j] = np.nan
+
+    with open(save_dir + '/eki_est_dists', 'wb') as file:
+        pickle.dump(eki_dists, file)
+
+    eki_num_sims = np.array([[j * simulation_params.fix_n_steps
+                              for j in simulation_params.vary_n_samps_eki]
+                             for _ in range(n_repeats)])
+
+    abc_smc_dists = np.zeros((n_repeats, len(simulation_params.vary_n_samps_abc_smc)))
+    for i in range(n_repeats):
+        print(f'SMC dist sims - Iter {i}')
+        if repeat_summarised_data is not None:
+            scenario.data = repeat_summarised_data[i]
+        for j in range(len(simulation_params.vary_n_samps_abc_smc)):
+            if not jnp.any(jnp.isnan(abc_smc_samps_all[i, j].simulated_data[-1])):
+                random_key, subkey = random.split(random_key)
+                abc_smc_dists[i, j] = estimate_dist(abc_smc_samps_all[i, j].value[-1], subkey)
+            else:
+                abc_smc_dists[i, j] = np.nan
+
+    with open(save_dir + '/c', 'wb') as file:
+        pickle.dump(abc_smc_dists, file)
+
+    abc_smc_sims = np.array([[abc_smc_samps_all[i, j].num_sims
+                              for j in range(len(simulation_params.vary_n_samps_abc_smc))]
+                             for i in range(n_repeats)])
+
+    n_min = np.min([simulation_params.vary_n_samps_eki.min(), simulation_params.vary_n_samps_abc_smc.min()])
+    n_max = np.max([simulation_params.vary_n_samps_eki.max(), simulation_params.vary_n_samps_abc_smc.max()])
+    n_min_log10 = np.log(n_min) / np.log(10)
+    n_max_log10 = np.log(n_max) / np.log(10)
+    num_points_mcmc = np.maximum(len(simulation_params.vary_n_samps_eki), len(simulation_params.vary_n_samps_abc_smc))
+    n_mcmc = np.asarray(10 ** np.linspace(n_min_log10, n_max_log10, num_points_mcmc, endpoint=True), dtype='int')
+
+    # abc_mcmc_n_dists = np.zeros((n_repeats, num_points_mcmc))
+    # for i in range(n_repeats):
+    #     print(f'MCMC dist sims - Iter {i}')
+    #     if repeat_summarised_data is not None:
+    #         scenario.data = repeat_summarised_data[i]
+    #     sum_dist_ests = 0.
+    #     for j in range(num_points_mcmc):
+    #         n_prev = n_mcmc[j - 1] if j > 0 else 0
+    #         n_new = n_mcmc[j]
+    #         n_int = n_new - n_prev
+    #         vals_int = abc_mcmc_samps[i].value[n_prev:n_new]
+    #         random_key, subkey = random.split(random_key)
+    #         sum_dist_ests += estimate_dist(vals_int, subkey) * n_int
+    #         abc_mcmc_n_dists[i, j] = sum_dist_ests / n_new
+    #
+    # with open(save_dir + '/abc_mcmc_est_dists', 'wb') as file:
+    #     pickle.dump(abc_mcmc_n_dists, file)
+
+    eki_n_samps_repeat = jnp.repeat(simulation_params.vary_n_samps_eki[jnp.newaxis], n_repeats, 0)
+    mcmc_n_samps_repeat = jnp.repeat(n_mcmc[jnp.newaxis], n_repeats, 0)
+    smc_n_samps_repeat = jnp.repeat(simulation_params.vary_n_samps_abc_smc[jnp.newaxis], n_repeats, 0)
+
+    # est_dist_y_max = np.maximum(abc_mcmc_n_dists.max(), abc_smc_dists.max())
+    est_dist_y_max = abc_smc_dists.max()
+
+    fig_n, ax_n = plt.subplots()
+    ax_n.scatter(eki_n_samps_repeat, eki_dists, color='blue', label='TEKI')
+    # ax_n.scatter(mcmc_n_samps_repeat, abc_mcmc_n_dists, color='orange', label='ABC-MCMC')
+    ax_n.scatter(smc_n_samps_repeat, abc_smc_dists, color='green', label='ABC-SMC')
+    ax_n.set_ylim([0, est_dist_y_max])
+    ax_n.set_xscale('log')
+    ax_n.spines['top'].set_visible(False)
+    ax_n.spines['right'].set_visible(False)
+    ax_n.set_xlabel(r'$N$')
+    ax_n.set_ylabel('Distance')
+    ax_n.legend(frameon=False)
+    fig_n.savefig(save_dir + '/est_distance_n_scatter', dpi=300)
+
+    abc_mcmc_sims = mcmc_n_samps_repeat + simulation_params.n_pre_run_abc_mcmc
+
+    fig_nsims, ax_nsims = plt.subplots()
+    ax_nsims.scatter(eki_num_sims, eki_dists, color='blue', label='TEKI')
+    # ax_nsims.scatter(abc_mcmc_sims, abc_mcmc_n_dists, color='orange', label='ABC-MCMC')
+    ax_nsims.scatter(abc_smc_sims, abc_smc_dists, color='green', label='ABC-SMC')
+    ax_nsims.set_ylim([0, est_dist_y_max])
+    ax_nsims.set_xscale('log')
+    ax_nsims.spines['top'].set_visible(False)
+    ax_nsims.spines['right'].set_visible(False)
+    ax_nsims.set_xlabel('Likelihood Simulations')
+    ax_nsims.set_ylabel('Distance')
+    ax_nsims.legend(frameon=False)
+    fig_nsims.savefig(save_dir + '/est_distance_nsims_scatter', dpi=300)

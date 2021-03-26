@@ -113,6 +113,7 @@ class TemperedEKI(TransportSampler):
         kalman_gain = cov_xy @ jnp.linalg.inv(cov_alph + self.parameters.nugget * jnp.eye(d_y))
 
         perturbs = jnp.sqrt(alph - 1) * random.normal(random_keys[-2], shape=(n, d_y)) @ cov_y_given_x_chol.T
+        perturbs = jnp.where(jnp.isnan(perturbs), 0., perturbs)
 
         ensemble_state.value = ensemble_state.value \
                                + (scenario.data - ensemble_state.simulated_data + perturbs) @ kalman_gain.T

@@ -8,7 +8,6 @@ from jax import numpy as jnp, random
 
 import mocat
 from mocat import abc
-from teki import TemperedEKI, AdaptiveTemperedEKI
 
 import utils
 
@@ -20,15 +19,24 @@ if not os.path.exists(save_dir):
 # Simulation parameters
 simulation_params = mocat.cdict()
 
+# Number of simulations from true data
+simulation_params.n_data = int(1e3)
+
 # Number repeated simulations per algorithm
 simulation_params.n_repeats = 1
 
 # EKI ##################################################################################################################
-# Number of samples to generate
-simulation_params.n_samps_eki = jnp.array([100, 1000, 10000])
+# Vary n_samps
+simulation_params.vary_n_samps_eki = jnp.asarray(10 ** jnp.linspace(2.3, 3.7, 6), dtype='int32')
 
-# Number of eki steps
-simulation_params.n_steps_eki = jnp.array([10, 50])
+# Fixed n_samps
+simulation_params.fix_n_samps_eki = 300
+
+# Fixed n_steps
+simulation_params.fix_n_steps = 50
+
+# Vary number of eki steps, fix n_samps
+simulation_params.vary_n_steps_eki = jnp.array([1, 10, 100])
 
 # max sd for optimisation
 simulation_params.optim_max_sd_eki = 0.1
@@ -37,14 +45,23 @@ simulation_params.optim_max_sd_eki = 0.1
 simulation_params.max_temp_eki = 50.
 
 # ABC MCMC #############################################################################################################
-simulation_params.n_samps_rwmh = int(1e5)
+# N max
+simulation_params.n_samps_abc_mcmc = int(1e6)
 
 # N pre-run
-simulation_params.n_abc_pre_run = int(1e3)
+simulation_params.n_pre_run_abc_mcmc = int(1e3)
+
+# N cut_off for stepsize
+simulation_params.pre_run_ar_abc_mcmc = 0.1
+
+# RM params
+simulation_params.rm_stepsize_scale_mcmc = 1.
+simulation_params.rm_stepsize_neg_exponent = 2 / 3
+
 
 # ABC SMC ##############################################################################################################
-# Number of samples to generate
-simulation_params.n_samps_abc_smc = jnp.array([1000, 5000])
+# Vary n_samps
+simulation_params.vary_n_samps_abc_smc = jnp.asarray(10 ** jnp.linspace(2.5, 4, 5), dtype='int32')
 
 # Maximum iterations
 simulation_params.max_iter_abc_smc = 1000
@@ -121,28 +138,31 @@ random_key = random.PRNGKey(0)
 # Run EKI
 # utils.run_eki(lv_scenario, save_dir, random_key)
 
-
 # Run RWMH ABC
 # utils.run_abc_mcmc(lv_scenario, save_dir, random_key)
 
 # # Run AMC SMC
 # utils.run_abc_smc(lv_scenario, save_dir, random_key, initial_state_extra_generator=generate_init_state_extra)
-#
+
 
 param_names = (r'$\theta_1$', r'$\theta_2$', r'$\theta_3$')
-plot_ranges = [[0., 3.], [0, 0.05], [0, 3.]]
+plot_ranges = [[0., 2.], [0, 0.025], [0, 2.]]
 optim_ranges = [[0., 1.5], [0, 0.01], [0, 1.]]
-#
+
+
 # # Plot EKI
 utils.plot_eki(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
                optim_ranges=optim_ranges, bp_widths=0.7,
                rmse_temp_round=0)
 
-# # Plot ABC-MCMC
+# # # Plot ABC-MCMC
 # utils.plot_abc_mcmc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
 #
 #
-# Plot ABC-SMC
-utils.plot_abc_smc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-                   rmse_temp_round=0, legend_loc='upper right', legend_ax=1, legend_size=8)
-
+# # Plot ABC-SMC
+# utils.plot_abc_smc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+#                    rmse_temp_round=0, legend_loc='upper right', legend_ax=1, legend_size=8)
+#
+#
+# # Plot RMSE
+# utils.plot_rmse(lv_scenario, save_dir, true_constrained_params)

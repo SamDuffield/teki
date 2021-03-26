@@ -1,5 +1,5 @@
 ########################################################################################################################
-# Compare TEKI and ABC techniques for g-and-k distribution (4 dimensional)
+# Compare TEKI and ABC techniques for Lorenz 96 scenario (40 dimensional)
 ########################################################################################################################
 
 import os
@@ -8,6 +8,7 @@ from jax import numpy as jnp, random, vmap
 
 import mocat
 from mocat import abc
+from mocat import ssm
 
 import utils
 
@@ -83,67 +84,9 @@ simulation_params.termination_alpha = 0.015
 simulation_params.save(save_dir + '/sim_params', overwrite=True)
 
 
-class GKThinOrder(abc.scenarios.GKTransformedUniformPrior):
-    num_thin: int = 100
-    n_unsummarised_data: int = simulation_params.n_data
-
-    def summarise_data(self,
-                       data: jnp.ndarray):
-        order_stats = data.sort()
-        thin_inds = jnp.linspace(0, len(data), self.num_thin, endpoint=False, dtype='int32')
-        return order_stats[thin_inds]
+class L96ABC(abc.ABCScenario):
 
 
-gk_scenario = GKThinOrder()
-
-true_constrained_params = jnp.array([3., 1., 2., 0.5])
-true_unconstrained_params = gk_scenario.unconstrain(true_constrained_params)
-
-random_key = random.PRNGKey(0)
-repeat_sim_data_keys = random.split(random_key, simulation_params.n_repeats + 1)
-random_key = repeat_sim_data_keys[-1]
-
-each_data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_params, repeat_sim_data_keys[:-1])
-
-########################################################################################################################
-
-# # # Run EKI
-# utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_data)
-#
-# # # Run MCMC ABC
-# utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
-# #
-# # # Run AMC SMC
-# utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
-
-# ########################################################################################################################
-
-param_names = (r'$A$', r'$B$', r'$g$', r'$k$')
-# ranges = ([0., 10.], [0., 5.], [0., 10.], [0., 5.])
-plot_ranges = ([1.5, 4.], [0., 2.], [0., 10.], [0., 6.])
-
-# # Plot EKI
-# utils.plot_eki(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-#                # y_range_mult=0.75
-#                bp_widths=0.1,
-#                rmse_temp_round=0)
-
-# Plot ABC-MCMC
-# utils.plot_abc_mcmc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
-
-# Plot ABC-SMC
-# utils.plot_abc_smc(gk_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-#                    trim_thresholds=10,
-#                    rmse_temp_round=0)
 
 
-# Plot RMSE
-utils.plot_rmse(gk_scenario, save_dir, true_constrained_params)
-
-# Plot distances
-# utils.plot_dists(gk_scenario, save_dir, repeat_summarised_data=each_data)
-
-# # Plot resampled distances
-# n_resamps = 100
-# utils.plot_res_dists(gk_scenario, save_dir, n_resamps, repeat_summarised_data=each_data)
 

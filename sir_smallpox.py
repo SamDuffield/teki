@@ -4,7 +4,7 @@
 
 import os
 
-from jax import numpy as np, random
+from jax import numpy as jnp, random
 
 import mocat
 from mocat import abc
@@ -19,40 +19,61 @@ if not os.path.exists(save_dir):
 # Simulation parameters
 simulation_params = mocat.cdict()
 
+# Number of simulations from true data
+simulation_params.n_data = int(1e3)
+
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 20
+simulation_params.n_repeats = 5
 
-# EKI
-# Number of samples to generate
-simulation_params.n_samps_eki = np.array([500, 1000, 2000])
+# EKI ##################################################################################################################
+# Vary n_samps
+simulation_params.vary_n_samps_eki = jnp.asarray(10 ** jnp.linspace(2.5, 3.7, 6), dtype='int32')
 
-# threshold param
-simulation_params.eki_optim_max_sd = 0.2
+# Fixed n_samps
+simulation_params.fix_n_samps_eki = 1000
 
-# RWMH
-simulation_params.n_samps_rwmh = int(1e6)
+# Fixed n_steps
+simulation_params.fix_n_steps = 50
+
+# Vary number of eki steps, fix n_samps
+simulation_params.vary_n_steps_eki = jnp.array([1, 10, 100, 1000])
+
+# max sd for optimisation
+simulation_params.optim_max_sd_eki = 0.1
+
+# max temp
+simulation_params.max_temp_eki = 50.
+
+# ABC MCMC #############################################################################################################
+# N max
+simulation_params.n_samps_abc_mcmc = int(1e6)
 
 # N pre-run
-simulation_params.n_abc_pre_run = int(1e5)
+simulation_params.n_pre_run_abc_mcmc = int(1e3)
 
-# ABC distance thresholds
-simulation_params.abc_thresholds = np.array([10, 15, 20])
+# N cut_off for stepsize
+simulation_params.pre_run_ar_abc_mcmc = 0.1
 
-# RWMH stepsizes
-simulation_params.rwmh_stepsizes = np.array([1e-2, 1e-1, 1e-0])
+# RM params
+simulation_params.rm_stepsize_scale_mcmc = 1.
+simulation_params.rm_stepsize_neg_exponent = 2 / 3
+
 
 # ABC SMC ##############################################################################################################
-# Number of samples to generate
-simulation_params.n_samps_abc_smc = np.array([500, 2000, 5000])
-
-# Number of intermediate MCMC steps to take
-simulation_params.n_mcmc_steps_abc_smc = 10
+# Vary n_samps
+simulation_params.vary_n_samps_abc_smc = jnp.asarray(10 ** jnp.linspace(2.5, 4, 5), dtype='int32')
 
 # Maximum iterations
-simulation_params.max_iter_abc_smc = 100
+simulation_params.max_iter_abc_smc = 1000
 
 # Retain threshold parameter
-simulation_params.threshold_quantile_retain_abc_smc = 0.75
+simulation_params.threshold_quantile_retain_abc_smc = 0.9
+
+# Resample threshold parameter
+simulation_params.threshold_quantile_resample_abc_smc = 0.5
+
+# MCMC acceptance rate to terminate
+simulation_params.termination_alpha = 0.015
 
 ########################################################################################################################
 
@@ -60,63 +81,68 @@ simulation_params.save(save_dir + '/sim_params', overwrite=True)
 
 
 class TSIRRemovalTimes(abc.scenarios.TransformedSIR):
-    initial_si = np.array([119, 1])
-    times = np.array([0., 13., 26., 39., 52., 65., 78., np.inf])
-    data = np.array([2, 6, 3, 7, 8, 4, 0, 76])
+    initial_si = jnp.array([119, 1])
+    times = jnp.array([0., 13., 26., 39., 52., 65., 78., jnp.inf])
+    data = jnp.array([2, 6, 3, 7, 8, 4, 0, 76])
 
-    prior_rates = np.ones(2) * 0.1
+    prior_rates = jnp.ones(2) * 0.1
 
     def likelihood_sample(self,
-                          x: np.ndarray,
-                          random_key: np.ndarray) -> np.ndarray:
+                          x: jnp.ndarray,
+                          random_key: jnp.ndarray) -> jnp.ndarray:
         sim_times, sim_si = self.simulate_times_and_si(x, random_key)
-        max_time = np.max(sim_times)
-        sim_times = np.where(sim_times == 0, np.inf, sim_times)
+        max_time = jnp.max(sim_times)
+        sim_times = jnp.where(sim_times == 0, jnp.inf, sim_times)
 
         pop_size = self.initial_si.sum()
 
         active_pop_size = sim_si.sum(1)
-        final_active_pop_size = np.min(active_pop_size)
-        active_pop_size = np.where(sim_times == np.inf, final_active_pop_size, active_pop_size)
+        final_active_pop_size = jnp.min(active_pop_size)
+        active_pop_size = jnp.where(sim_times == jnp.inf, final_active_pop_size, active_pop_size)
 
-        time_inds = np.searchsorted(sim_times, self.times[1:]) - 1
+        time_inds = jnp.searchsorted(sim_times, self.times[1:]) - 1
         active_pop_size_times = active_pop_size[time_inds]
 
-        active_pop_size_previous_times = np.append(pop_size, active_pop_size_times[:-1])
-
-        return np.append(active_pop_size_previous_times - active_pop_size_times, max_time)
+        active_pop_size_previous_times = jnp.append(pop_size, active_pop_size_times[:-1])
+        return jnp.append(active_pop_size_previous_times - active_pop_size_times, max_time)
 
     def distance_function(self,
-                          simulated_data: np.ndarray) -> float:
+                          simulated_data: jnp.ndarray) -> float:
         diff_data = simulated_data - self.data
-        return np.sqrt(np.square(diff_data[:-1]).sum() + (diff_data[-1] / 50) ** 2)
+        return jnp.sqrt(jnp.square(diff_data[:-1]).sum() + (diff_data[-1] / 50) ** 2)
 
 
 sir_scenario = TSIRRemovalTimes()
 
 random_key = random.PRNGKey(0)
 
-# Run EKI
-utils.run_eki_fixed_stepsize(sir_scenario, save_dir, random_key)
-
-# Run RWMH ABC
-utils.run_abc_mcmc(sir_scenario, save_dir, random_key)
-
-# Run AMC SMC
-utils.run_abc_smc(sir_scenario, save_dir, random_key)
+# # Run EKI
+# utils.run_eki(sir_scenario, save_dir, random_key)
+#
+# # Run RWMH ABC
+# utils.run_abc_mcmc(sir_scenario, save_dir, random_key)
+#
+# # Run AMC SMC
+# utils.run_abc_smc(sir_scenario, save_dir, random_key)
 
 
 param_names = (r'$\lambda$', r'$\gamma$')
+plot_ranges = [[0., 3.], [0, 3.]]
 
 # Plot EKI
-plot_ranges_eki = [[0., 5.], [0, 1.]]
-utils.plot_eki(sir_scenario, save_dir, plot_ranges_eki, param_names=param_names, y_range_mult2=0.1,
+utils.plot_eki(sir_scenario, save_dir, plot_ranges, param_names=param_names, bp_widths=0.7,
+               optim_ranges=[[0., 3.], [0, 3.]],
                rmse_temp_round=0)
 
+# # Plot ABC-MCMC
+# utils.plot_abc_mcmc(sir_scenario, save_dir, plot_ranges,  param_names=param_names)
 
-plot_ranges_abc = [[0., 5.], [0, 5.]]
-# Plot ABC-MCMC
-utils.plot_abc_mcmc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names)
 
 # Plot ABC-SMC
-utils.plot_abc_smc(sir_scenario, save_dir, plot_ranges_abc, param_names=param_names)
+utils.plot_abc_smc(sir_scenario, save_dir, plot_ranges,  param_names=param_names,
+                   rmse_temp_round=0, legend_loc='upper right', legend_ax=1, legend_size=8)
+
+# Plot distances
+# utils.plot_dists(sir_scenario, save_dir)
+
+
