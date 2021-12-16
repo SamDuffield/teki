@@ -19,18 +19,15 @@ if not os.path.exists(save_dir):
 # Simulation parameters
 simulation_params = mocat.cdict()
 
-# Number of simulations from true data
-simulation_params.n_data = int(1e3)
-
 # Number repeated simulations per algorithm
-simulation_params.n_repeats = 1
+simulation_params.n_repeats = 20
 
 # EKI ##################################################################################################################
 # Vary n_samps
-simulation_params.vary_n_samps_eki = jnp.asarray(10 ** jnp.linspace(2.3, 3.7, 6), dtype='int32')
+simulation_params.vary_n_samps_eki = jnp.array([200, 1000, 5000])
 
 # Fixed n_samps
-simulation_params.fix_n_samps_eki = 300
+simulation_params.fix_n_samps_eki = 500
 
 # Fixed n_steps
 simulation_params.fix_n_steps = 50
@@ -42,7 +39,7 @@ simulation_params.vary_n_steps_eki = jnp.array([1, 10, 100])
 simulation_params.optim_max_sd_eki = 0.1
 
 # max temp
-simulation_params.max_temp_eki = 50.
+simulation_params.max_temp_eki = 10.
 
 # ABC MCMC #############################################################################################################
 # N max
@@ -61,7 +58,8 @@ simulation_params.rm_stepsize_neg_exponent = 2 / 3
 
 # ABC SMC ##############################################################################################################
 # Vary n_samps
-simulation_params.vary_n_samps_abc_smc = jnp.asarray(10 ** jnp.linspace(2.5, 4, 5), dtype='int32')
+# simulation_params.vary_n_samps_abc_smc = jnp.asarray(10 ** jnp.linspace(2.5, 4, 5), dtype='int32')
+simulation_params.vary_n_samps_abc_smc = simulation_params.vary_n_samps_eki
 
 # Maximum iterations
 simulation_params.max_iter_abc_smc = 1000
@@ -136,11 +134,11 @@ def generate_init_state_extra(abc_scenario: abc.ABCScenario,
 random_key = random.PRNGKey(0)
 
 # Run EKI
-# utils.run_eki(lv_scenario, save_dir, random_key)
+utils.run_eki(lv_scenario, save_dir, random_key)
 
-# Run RWMH ABC
+# # Run RWMH ABC
 # utils.run_abc_mcmc(lv_scenario, save_dir, random_key)
-
+#
 # # Run AMC SMC
 # utils.run_abc_smc(lv_scenario, save_dir, random_key, initial_state_extra_generator=generate_init_state_extra)
 
@@ -149,20 +147,36 @@ param_names = (r'$\theta_1$', r'$\theta_2$', r'$\theta_3$')
 plot_ranges = [[0., 2.], [0, 0.025], [0, 2.]]
 optim_ranges = [[0., 1.5], [0, 0.01], [0, 1.]]
 
-
-# # Plot EKI
+# Plot EKI
 utils.plot_eki(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-               optim_ranges=optim_ranges, bp_widths=0.7,
-               rmse_temp_round=0)
+               bp_widths=0.5)
 
-# # # Plot ABC-MCMC
-# utils.plot_abc_mcmc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+# Plot ABC
+utils.plot_abc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+
+# Plot RMSE
+utils.plot_rmse(lv_scenario, save_dir, true_constrained_params)
+
+
+
+# # # Plot EKI
+# utils.plot_eki(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+#                optim_ranges=optim_ranges, bp_widths=0.7,
+#                rmse_temp_round=0)
 #
-#
-# # Plot ABC-SMC
-# utils.plot_abc_smc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
-#                    rmse_temp_round=0, legend_loc='upper right', legend_ax=1, legend_size=8)
+# # # # Plot ABC-MCMC
+# # utils.plot_abc_mcmc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names)
+# #
+# #
+# # # Plot ABC-SMC
+# # utils.plot_abc_smc(lv_scenario, save_dir, plot_ranges, true_params=true_constrained_params, param_names=param_names,
+# #                    rmse_temp_round=0, legend_loc='upper right', legend_ax=1, legend_size=8)
 #
 #
 # # Plot RMSE
 # utils.plot_rmse(lv_scenario, save_dir, true_constrained_params)
+#
+#
+# # Plot resampled distances
+# n_resamps = 20
+# utils.plot_res_dists(lv_scenario, save_dir, n_resamps)
