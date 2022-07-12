@@ -1,8 +1,7 @@
-/simulations/
-
 .DS_Store
-
 .idea/
-
 __pycache__/
 
+
+archive/
+simulations/
