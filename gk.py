@@ -108,14 +108,14 @@ each_data = vmap(gk_scenario.likelihood_sample, (None, 0))(true_unconstrained_pa
 
 ########################################################################################################################
 
-# # Run EKI
-utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_data)
-
-# # Run MCMC ABC
-utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
+# # # Run EKI
+# utils.run_eki(gk_scenario, save_dir, random_key, repeat_data=each_data)
 #
-# # Run AMC SMC
-utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
+# # # Run MCMC ABC
+# utils.run_abc_mcmc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
+# #
+# # # Run AMC SMC
+# utils.run_abc_smc(gk_scenario, save_dir, random_key, repeat_summarised_data=each_data)
 
 # ########################################################################################################################
 

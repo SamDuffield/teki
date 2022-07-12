@@ -462,9 +462,47 @@ def plot_comp_densities(scenario, save_dir, ranges, true_params=None, param_name
                                color=['blue', 'green'],
                                alpha=1.,
                                linewidth=2)
+
     leg_ax = axes if scenario.dim == 1 else axes.ravel()[-1]
     leg_ax.legend(frameon=False, prop={'size': 10})
     fig.savefig(save_dir + '/densities', dpi=300)
+
+
+def plot_comp_densities_rwmh(scenario, save_dir, ranges, true_params=None, param_names=None,
+                        dim_inds=None, n_ind=None, repeat_ind=0):
+    with open(save_dir + '/eki_samps_n_vary', 'rb') as file:
+        eki_samp_all = pickle.load(file)
+
+    with open(save_dir + '/abc_smc_samps', 'rb') as file:
+        smc_samps_all = pickle.load(file)
+
+    rwmh_samps = mocat.load_cdict(save_dir + '/rwmh_samps.cdict').value
+    if hasattr(scenario, 'unconstrain'):
+        rwmh_samps = scenario.unconstrain(rwmh_samps)
+
+    d = eki_samp_all[repeat_ind, 0].value.shape[-1]
+
+    if dim_inds is None:
+        dim_inds = jnp.arange(min(4, d))
+
+    if n_ind is None:
+        n_ind = 0 if len(eki_samp_all[repeat_ind]) == 1 else 1
+
+    eki_samp_vals = eki_samp_all[repeat_ind, n_ind].value[-1][:, dim_inds]
+    smc_vals = smc_samps_all[repeat_ind, n_ind].value[-1][:, dim_inds]
+    smc_vals = smc_vals[smc_samps_all[repeat_ind, n_ind].log_weight[-1] > -jnp.inf]
+
+    fig, axes = plot_densities(scenario, [rwmh_samps, eki_samp_vals, smc_vals],
+                               true_params=true_params, param_names=param_names,
+                               ranges=ranges, y_range_mult=1.,
+                               labels=['True Posterior', 'EKI Sampling', 'ABC-SMC'],
+                               color=['grey', 'blue', 'green'],
+                               alpha=[0.75, 1., 1.],
+                               linewidth=2)
+
+    leg_ax = axes if scenario.dim == 1 else axes.ravel()[-1]
+    leg_ax.legend(frameon=False, prop={'size': 10})
+    fig.savefig(save_dir + '/densities_w_rwmh', dpi=300)
 
 
 def plot_optim_box_plots(scenario, save_dir, true_params=None, param_names=None,
